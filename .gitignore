@@ -1,2 +1,3 @@
 ai-agent-with-mcp-venv
 /**/__pycache__
+.env

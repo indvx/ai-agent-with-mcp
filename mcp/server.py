@@ -1,19 +1,25 @@
 from mcp.server.fastmcp import FastMCP
 import mysql.connector
 import sys
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+
 
 mcp = FastMCP(
     "mysql-test",
-    host="localhost",
-    port=8001
+    host=os.getenv("MCP_HOST"),
+    port=os.getenv("MCP_PORT"),
 )
 
 def get_conn():
     return mysql.connector.connect(
-        host="localhost",
-        user="root",
-        password="root",
-        database="python_dummy"
+        host=os.getenv("MYSQL_HOST"),
+        port=os.getenv("MYSQL_PORT"),
+        user=os.getenv("MYSQL_USER"),
+        password=os.getenv("MYSQL_PASSWORD"),
+        database=os.getenv("MYSQL_DATABASE")
     )
 
 
