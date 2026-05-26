@@ -81,6 +81,8 @@ FastAPI Server
    # MCP Configuration
    MCP_HOST='localhost'
    MCP_PORT='8001'
+   MCP_URL='http://localhost:8001/mcp'
+
 
    # MySQL Database Configuration
    MYSQL_HOST="localhost"
@@ -191,6 +193,7 @@ The `/chat` endpoint is rate limited to **5 requests per minute** per IP address
 |----------|-------------|---------|
 | `MCP_HOST` | MCP server hostname | `localhost` |
 | `MCP_PORT` | MCP server port | `8001` |
+| `MCP_URL` | MCP server url | `http://localhost:8001/mcp` |
 | `MYSQL_HOST` | MySQL server hostname | `localhost` |
 | `MYSQL_PORT` | MySQL server port | `3306` |
 | `MYSQL_USER` | MySQL username | `root` |
