@@ -18,23 +18,22 @@ class MainState(TypedDict):
 
 
 llm = ChatOpenAI(
-    model=os.getenv("OPENAI_MODEL", "gpt-3.5-turbo"), 
-    temperature=0, 
-    verbose=True
-    )
+    model=os.getenv("OPENAI_MODEL", "gpt-3.5-turbo"), temperature=0, verbose=True
+)
 
 
 class LanggraphService:
     def __init__(self):
         self.__graph = None
         self.__mcp_client = None
+        self.__mcp_url = os.getenv("MCP_URL", "http://localhost:8001/mcp")
 
     async def initialize(self):
         self.__mcp_client = MultiServerMCPClient(
             {
                 "db_operation": {
                     "transport": "streamable_http",
-                    "url": "http://localhost:8001/mcp",
+                    "url": self.__mcp_url,
                 }
             }
         )
