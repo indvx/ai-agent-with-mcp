@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session
 from sql.models import refresh_tokens as refresh_token_model
+from datetime import timezone, datetime
 
 
 def get_token_by_jti_or_user_id(
@@ -50,3 +51,13 @@ def create_or_update_refresh_token(
     db.commit()
     db.refresh(refresh_token)
     return refresh_token
+
+
+def is_refresh_token_expired(refresh_token: refresh_token_model.RefreshToken) -> bool:
+    expires_at = refresh_token.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    else:
+        expires_at = expires_at.astimezone(timezone.utc)
+
+    return expires_at < datetime.now(timezone.utc)
