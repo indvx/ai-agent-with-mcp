@@ -14,6 +14,6 @@ class RefreshToken(Base):
     token = Column(String(500), nullable=False)
     revoked = Column(Boolean, default=False)
     expires_at = Column(DateTime, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     user = relationship("User", back_populates="refresh_tokens")
