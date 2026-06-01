@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from core.security import SecurityHandler
-from sql.model.users import User
+from sql.models.users import User
 from schemas.users import UserResponse
 from typing import List
 
