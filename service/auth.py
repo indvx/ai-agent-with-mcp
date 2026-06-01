@@ -93,14 +93,12 @@ class AuthService(BaseService):
             raise HTTPException(status_code=401, detail=("Invalid token type"))
 
         jti = payload.get("jti")
-
         ref_token = refresh_token_crud.get_token_by_jti_or_user_id(self.db, jti=jti)
-
         if not ref_token:
             raise HTTPException(status_code=401, detail=("Token not found"))
 
         if ref_token.revoked:
-            raise HTTPException(status_code=401, detail=("Token is expired or revoked"))
+            raise HTTPException(status_code=401, detail=("Token is revoked"))
 
         if refresh_token_crud.is_refresh_token_expired(ref_token):
             raise HTTPException(status_code=401, detail=("Token is expired"))
