@@ -1,68 +1,96 @@
 # AI Agent with MCP
 
-An intelligent AI agent powered by LangGraph and Model Context Protocol (MCP) that provides a FastAPI-based chat interface with authentication, role-based access control, and database operations through OpenAI integration.
+An intelligent AI agent powered by LangGraph and Model Context Protocol (MCP) that provides a FastAPI-based chat interface with JWT authentication, role-based access control (RBAC), and database operations integrated with OpenAI's language models.
 
 ## Overview
 
-This project implements an AI-driven agent that leverages:
-- **LangGraph**: For building stateful, multi-step agent workflows
-- **Model Context Protocol (MCP)**: For standardized tool integration with backend services
-- **FastAPI**: For high-performance REST API with automatic OpenAPI documentation
-- **OpenAI API**: For advanced language model capabilities
-- **JWT Authentication**: For secure user authentication
-- **Role-Based Access Control**: For managing user permissions
+This project implements a production-ready AI agent system that combines:
+- **LangGraph**: For orchestrating stateful, multi-step agent workflows
+- **Model Context Protocol (MCP)**: For standardized integration with backend database operations
+- **FastAPI**: Modern, fast web framework with automatic API documentation
+- **OpenAI API**: Advanced language model capabilities (GPT models)
+- **JWT Authentication**: Secure token-based user authentication
+- **Role-Based Access Control (RBAC)**: Fine-grained permission management
+- **SQLAlchemy ORM**: Database abstraction layer with MySQL support
 
 ## Features
 
 - 🤖 **AI Agent**: Intelligent agent powered by GPT models with MCP tool integration
-- 🔄 **LangGraph Pipeline**: State-based workflow management for multi-turn conversations
-- 🛠️ **MCP Integration**: Standardized tool protocol for database operations
-- 🚀 **FastAPI Server**: Modern, fast web framework with automatic API documentation
-- 🔐 **Authentication & Authorization**: JWT-based user authentication with role management
-- 👥 **User Management**: Complete user lifecycle management with roles and permissions
-- 💾 **Database Support**: MySQL integration with SQLAlchemy ORM for data operations
-- 📊 **Health Checks**: Built-in health monitoring endpoints
-- 📈 **Token Usage Tracking**: Monitors and tracks OpenAI API token consumption
+- 🔄 **LangGraph Pipeline**: State-based workflow for multi-turn agent conversations
+- 🛠️ **MCP Integration**: Standardized tool protocol for database operation execution
+- 🚀 **FastAPI Server**: Modern REST API with automatic documentation
+- 🔐 **JWT Authentication**: Secure user authentication with access & refresh tokens
+- 👥 **Role-Based Access Control**: Multi-tier permission system (admin, manager, user)
+- 💾 **MySQL Database**: SQLAlchemy ORM with connection pooling
+- 📊 **Rate Limiting**: Configurable request throttling (5 requests/minute default)
+- 📈 **Token Usage Tracking**: Monitors OpenAI API token consumption per request
+- 🛡️ **Permission Management**: Granular permission control at endpoint level
+- 🔄 **Token Refresh**: Support for access token refresh without re-authentication
+- 🗑️ **Token Revocation**: Logout functionality with refresh token blacklisting
 
 ## Architecture
 
 ```
 FastAPI Server
-    ├── /auth endpoints (authentication)
-    ├── /user endpoints (user management)
-    ├── /role endpoints (role management)
-    ├── /chat endpoint (rate limited, AI-powered)
-    ├── /health endpoint
-    └── LanggraphService
-        ├── MCP Client (connects to MCP server)
-        └── LangGraph Pipeline
-            ├── State Management (MainState)
-            ├── Agent with OpenAI LLM
-            └── Tool Execution (via MCP)
+    ├── /auth endpoints
+    │   ├── POST /register (user registration)
+    │   ├── POST /login (JWT token generation)
+    │   ├── POST /refresh (refresh access token)
+    │   ├── POST /logout (token revocation)
+    │   └── GET /me (current user profile)
+    ├── /users endpoints (RBAC protected)
+    │   ├── GET / (list all users)
+    │   ├── GET /{user_id} (get user by ID)
+    │   └── DELETE /{user_id} (delete user)
+    ├── /roles endpoints (RBAC protected)
+    │   ├── GET / (list roles)
+    │   ├── POST /assign (assign role to user)
+    │   └── POST /permission (assign permission to role)
+    ├── /chat endpoint (rate-limited, permission-protected)
+    │   └── POST / (AI agent chat)
+    ├── / endpoint (welcome message)
+    └── /health endpoint (health check)
+        
+Database Layer (SQLAlchemy ORM)
+    ├── Users (with hashed passwords, active/verified flags)
+    ├── Roles (admin, manager, user)
+    ├── Permissions (fine-grained access control)
+    ├── UserRoles (many-to-many relationship)
+    ├── RolePermissions (many-to-many relationship)
+    └── RefreshTokens (token management & revocation)
+
+LanggraphService (AI Agent)
+    ├── MCP Client (connects to external MCP server for tools)
+    ├── MainState (question, answer, token_usage)
+    ├── LangGraph Pipeline
+    │   └── ask_question node (processes queries with LLM)
+    └── Token Usage Callback (tracks OpenAI consumption)
 ```
 
 ## Tech Stack
 
 - **Python 3.x**
-- **FastAPI 0.136.3**: Web framework with built-in validation
+- **FastAPI 0.136.3**: Web framework with async support
 - **LangGraph 1.2.1**: Agent workflow orchestration
-- **LangChain 1.3.1**: LLM framework
+- **LangChain 1.3.1**: LLM framework and agents
 - **LangChain-OpenAI 1.2.2**: OpenAI integration
 - **LangChain-MCP-Adapters 0.2.2**: MCP protocol support
 - **MCP 1.27.1**: Model Context Protocol
-- **MySQL Connector 9.7.0 & PyMySQL 1.2.0**: Database connectivity
-- **SlowAPI 0.1.9**: Rate limiting
-- **SQLAlchemy 2.0.50**: ORM and database toolkit
-- **PyJWT 2.13.0**: JWT token management
+- **SQLAlchemy 2.0.50**: ORM for database operations
+- **MySQL Connector 9.7.0**: MySQL connectivity
+- **PyMySQL 1.2.0**: Pure Python MySQL driver
+- **PyJWT 2.13.0**: JWT token encoding/decoding
 - **pwdlib 0.3.0**: Password hashing with Argon2
+- **SlowAPI 0.1.9**: Rate limiting
+- **Pydantic**: Data validation
 
 ## Installation
 
 ### Prerequisites
 - Python 3.8 or higher
-- OpenAI API key
-- MySQL database (for database operations)
-- MCP server running on localhost:8001 (for agent tools)
+- MySQL 5.7+ database running
+- OpenAI API key (for GPT model access)
+- MCP server running on localhost:8001 (optional, for agent tools)
 
 ### Setup
 
@@ -89,25 +117,33 @@ FastAPI Server
    ```
    Edit `.env` with your configuration:
    ```env
-   # MCP Configuration
-   MCP_HOST='localhost'
-   MCP_PORT='8001'
-   MCP_URL='http://localhost:8001/mcp'
-
-   # MySQL Database Configuration
-   MYSQL_HOST="localhost"
-   MYSQL_PORT="3306"
-   MYSQL_USER="root"
-   MYSQL_PASSWORD="root"
-   MYSQL_DATABASE="python_dummy"
+   # Database Configuration
+   DB_CONNECTION=mysql+pymysql
+   MYSQL_HOST=localhost
+   MYSQL_PORT=3306
+   MYSQL_USER=root
+   MYSQL_PASSWORD=root
+   MYSQL_DATABASE=python_dummy
 
    # OpenAI Configuration
-   OPENAI_API_KEY='your-api-key-here'
-   OPENAI_MODEL='gpt-3.5-turbo'  # or 'gpt-4', 'gpt-4-turbo', etc.
+   OPENAI_API_KEY=your-api-key-here
+   OPENAI_MODEL=gpt-3.5-turbo
+
+   # JWT Configuration
+   SECRET_KEY=your-secret-key-here
+   ALGORITHM=HS256
+   ACCESS_TOKEN_EXPIRE_MINUTES=15
+   REFRESH_TOKEN_EXPIRE_DAYS=7
+
+   # MCP Configuration
+   MCP_HOST=localhost
+   MCP_PORT=8001
+   MCP_URL=http://localhost:8001/mcp
    ```
 
-5. **Initialize the database** (optional - seed with initial data)
+5. **Initialize the database**
    ```bash
+   # Run seed script to create tables and default roles
    python -m utils.seed
    ```
 
@@ -115,77 +151,129 @@ FastAPI Server
 
 ```
 ai-agent-with-mcp/
-├── main.py                      # FastAPI application & router setup
-├── database.py                  # Database configuration & session management
+├── main.py                          # FastAPI app entry point
+├── database.py                      # SQLAlchemy engine, session factory
 ├── core/
-│   └── security.py             # Security utilities (JWT, password hashing)
+│   └── security.py                 # JWT token handling, password hashing, authorization
 ├── routers/
-│   ├── __init__.py
-│   ├── chat.py                 # Chat endpoint (AI agent interaction)
-│   ├── auth.py                 # Authentication endpoints
-│   ├── user.py                 # User management endpoints
-│   └── role.py                 # Role management endpoints
+│   ├── auth.py                     # Authentication endpoints (register, login, refresh, logout)
+│   ├── chat.py                     # AI chat endpoint (rate-limited, permission-protected)
+│   ├── user.py                     # User management endpoints
+│   └── role.py                     # Role & permission management endpoints
 ├── service/
-│   ├── __init__.py
-│   ├── base_service.py         # Base service class
-│   ├── auth.py                 # Authentication business logic
-│   ├── user.py                 # User business logic
-│   ├── role.py                 # Role business logic
-│   ├── langgraph_service.py    # LangGraph agent orchestration
-│   └── utility.py              # Utility functions
+│   ├── base_service.py             # Base service with database session
+│   ├── auth.py                     # Authentication business logic (JWT, password verification)
+│   ├── user.py                     # User service operations
+│   ├── role.py                     # Role service operations
+│   ├── langgraph_service.py        # AI agent orchestration with LangGraph
+│   └── utility.py                  # Utility functions
 ├── schemas/
-│   ├── auth.py                 # Auth request/response schemas
-│   ├── chat.py                 # Chat request/response schemas
-│   ├── role.py                 # Role schemas
-│   └── users.py                # User schemas
+│   ├── auth.py                     # RegisterRequest, LoginRequest, RefreshTokenRequest
+│   ├── chat.py                     # Chat query schema
+│   ├── role.py                     # Role response schemas
+│   └── users.py                    # User response schemas
 ├── sql/
-│   ├── models/                 # SQLAlchemy ORM models
-│   └── crud/                   # Database CRUD operations
+│   ├── models/
+│   │   ├── users.py               # User table model with password hashing
+│   │   ├── role.py                # Role table model
+│   │   ├── permission.py          # Permission table model
+│   │   ├── user_roles.py          # UserRole junction table (many-to-many)
+│   │   ├── role_permission.py     # RolePermission junction table (many-to-many)
+│   │   └── refresh_tokens.py      # RefreshToken table model (for revocation)
+│   └── crud/
+│       ├── users.py               # User CRUD operations (create, read, verify password)
+│       ├── role.py                # Role CRUD operations
+│       └── refresh_token.py       # RefreshToken CRUD operations
 ├── utils/
 │   ├── __init__.py
-│   └── seed.py                 # Database seeding utility
-├── requirements.txt             # Python dependencies
-├── .env-example                # Environment variables template
-├── .gitignore                  # Git ignore rules
-└── README.md                   # This file
+│   └── seed.py                     # Database seeding (roles, permissions, admin user)
+├── requirements.txt                # Python dependencies
+├── .env-example                    # Environment variables template
+├── .gitignore                      # Git ignore rules
+└── README.md                       # This file
 ```
 
 ## File Descriptions
 
 ### Core Application
-- **`main.py`**: FastAPI application entry point with router inclusions
-- **`database.py`**: Database configuration, session factory, and connection management
+- **`main.py`**: FastAPI application entry point. Includes all routers (auth, chat, user, role).
+- **`database.py`**: SQLAlchemy engine configuration with MySQL connection pooling, SessionLocal for dependency injection, Base for ORM models.
 
-### Core Security (`core/`)
-- **`core/security.py`**: JWT token handling, password hashing, and authentication utilities
+### Security & Authentication (`core/`)
+- **`core/security.py`**: 
+  - `JWTBearer`: HTTPBearer for token extraction from requests
+  - `SecurityHandler`: JWT decoding, user retrieval, role/permission validation
+  - `has_roles()`: Decorator to check user roles
+  - `has_permissions()`: Decorator to check granular permissions
+  - `get_current_user()`: Dependency for protected endpoints
 
 ### API Routes (`routers/`)
-- **`routers/chat.py`**: POST `/chat` endpoint for AI agent interaction with rate limiting
-- **`routers/auth.py`**: Authentication endpoints (login, register, token validation)
-- **`routers/user.py`**: User management endpoints (create, read, update, delete)
-- **`routers/role.py`**: Role management endpoints for RBAC
+- **`routers/auth.py`**: 
+  - `POST /auth/register`: User registration with default role
+  - `POST /auth/login`: Login returns access & refresh tokens
+  - `POST /auth/refresh`: Generate new access token from refresh token
+  - `POST /auth/logout`: Revoke refresh token
+  - `GET /auth/me`: Get current user profile
+  
+- **`routers/chat.py`**: 
+  - `POST /chat/`: AI chat endpoint (requires "chat:use" permission)
+  - Rate limited to 5 requests/minute
+  - Returns: `{answer: str, token_usage: dict}`
 
-### Business Logic (`service/`)
-- **`service/base_service.py`**: Base service class with common functionality
-- **`service/auth.py`**: Authentication service (login, registration, token management)
-- **`service/user.py`**: User service operations
-- **`service/role.py`**: Role service operations
-- **`service/langgraph_service.py`**: Core agent service with:
-  - `MainState`: TypedDict for conversation state
-  - `LanggraphService`: Agent orchestration with MCP client
-- **`service/utility.py`**: Utility service functions
+- **`routers/user.py`**: 
+  - `GET /users/`: List all users (requires "user:read" permission)
+  - `GET /users/{user_id}`: Get user by ID (requires "user:read" permission)
+  - `DELETE /users/{user_id}`: Delete user (requires "user:delete" permission)
 
-### Data Models & Schemas
-- **`schemas/`**: Pydantic models for request/response validation
-  - `auth.py`: Login, registration schemas
-  - `chat.py`: Chat request/response schemas
-  - `role.py`: Role schemas
-  - `users.py`: User schemas
-- **`sql/models/`**: SQLAlchemy ORM models for database tables
-- **`sql/crud/`**: CRUD operations for database interactions
+- **`routers/role.py`**: 
+  - `GET /roles/`: List roles (requires "role:manage" permission)
+  - `POST /roles/assign`: Assign role to user (requires "role:manage" permission)
+  - `POST /roles/permission`: Assign permission to role (requires "role:manage" permission)
+
+### Business Logic Services (`service/`)
+- **`service/base_service.py`**: Base service class with database session injection
+- **`service/auth.py`**: 
+  - `register()`: Create user with default role
+  - `login()`: Validate credentials, generate JWT tokens
+  - `refresh_token()`: Issue new access token
+  - `logout()`: Revoke refresh token
+  - `create_jwt_token()`: Generate access/refresh tokens with expiry
+  - `decode_token()`: Validate and decode JWT
+
+- **`service/user.py`**: User operations
+- **`service/role.py`**: Role and permission operations
+- **`service/langgraph_service.py`**: 
+  - `MainState`: TypedDict with question, answer, token_usage
+  - `initialize()`: Initialize MCP client for tool access
+  - `ask_question()`: Process user query through OpenAI with MCP tools
+  - `build_pipeline()`: Construct LangGraph pipeline
+
+### Data Models & Schemas (`schemas/`, `sql/models/`, `sql/crud/`)
+
+**Schemas (Pydantic):**
+- `schemas/auth.py`: RegisterRequest, LoginRequest, RefreshTokenRequest
+- `schemas/chat.py`: Chat query schema
+- `schemas/users.py`: UserResponse schema
+- `schemas/role.py`: RoleResponse schema
+
+**Database Models (SQLAlchemy):**
+- `sql/models/users.py`: User table with password hashing
+- `sql/models/role.py`: Role table (admin, manager, user)
+- `sql/models/permission.py`: Permission table (granular actions like "user:read", "chat:use")
+- `sql/models/user_roles.py`: Many-to-many relationship between users and roles
+- `sql/models/role_permission.py`: Many-to-many relationship between roles and permissions
+- `sql/models/refresh_tokens.py`: RefreshToken table for token management & revocation
+
+**CRUD Operations:**
+- `sql/crud/users.py`: Create user, get user, verify password
+- `sql/crud/role.py`: Get role, assign permissions
+- `sql/crud/refresh_token.py`: Create/update refresh token, validate token
 
 ### Utilities (`utils/`)
-- **`utils/seed.py`**: Database seeding script for initial data population
+- **`utils/seed.py`**: Initializes database with:
+  - Permissions: user:create, user:read, user:update, user:delete, role:manage, permission:manage, chat:use
+  - Roles: admin (all permissions), manager (limited), user (read-only)
+  - Admin user: admin@test.com / Admin@123
 
 ## Usage
 
@@ -195,12 +283,12 @@ ai-agent-with-mcp/
 # Start the FastAPI server
 uvicorn main:app --reload
 
-# Server will be available at http://localhost:8000
-# API documentation: http://localhost:8000/docs (Swagger UI)
+# Server available at http://localhost:8000
+# API docs: http://localhost:8000/docs (Swagger UI)
 # Alternative docs: http://localhost:8000/redoc (ReDoc)
 ```
 
-### Making API Requests
+### API Examples
 
 **Health Check:**
 ```bash
@@ -208,180 +296,252 @@ curl http://localhost:8000/health
 # Response: {"status": "ok"}
 ```
 
-**User Registration:**
+**Welcome Message:**
+```bash
+curl http://localhost:8000/
+# Response: {"message": "Welcome to mcp chat"}
+```
+
+**Register User:**
 ```bash
 curl -X POST "http://localhost:8000/auth/register" \
   -H "Content-Type: application/json" \
   -d '{
-    "username": "user@example.com",
-    "password": "secure_password"
+    "full_name": "John Doe",
+    "email": "john@example.com",
+    "password": "SecurePass123"
   }'
+# Response: {
+#   "message": "User registered successfully",
+#   "access_token": "eyJ0eXAiOiJKV1QiLCJhbGc...",
+#   "refresh_token": "eyJ0eXAiOiJKV1QiLCJhbGc...",
+#   "token_type": "bearer"
+# }
 ```
 
-**User Login:**
+**Login:**
 ```bash
 curl -X POST "http://localhost:8000/auth/login" \
   -H "Content-Type: application/json" \
   -d '{
-    "username": "user@example.com",
-    "password": "secure_password"
+    "email": "admin@test.com",
+    "password": "Admin@123"
   }'
-# Response: {"access_token": "jwt_token_here", "token_type": "bearer"}
+# Response: {
+#   "access_token": "eyJ0eXAiOiJKV1QiLCJhbGc...",
+#   "refresh_token": "eyJ0eXAiOiJKV1QiLCJhbGc...",
+#   "token_type": "bearer"
+# }
 ```
 
-**Chat Query** (requires JWT token):
+**Get Current User:**
 ```bash
-curl -X POST "http://localhost:8000/chat" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <your_jwt_token>" \
-  -d '{"query": "What are my recent database records?"}'
+curl -X GET "http://localhost:8000/auth/me" \
+  -H "Authorization: Bearer <access_token>"
+# Response: {
+#   "id": 1,
+#   "full_name": "Admin",
+#   "email": "admin@test.com",
+#   "is_active": true,
+#   "is_verified": true,
+#   "roles": [{"id": 1, "name": "admin"}]
+# }
 ```
 
-**Response:**
-```json
-{
-  "answer": "Based on your recent records...",
-  "token_usage": {
-    "input_tokens": 150,
-    "output_tokens": 85,
-    "total_tokens": 235
-  }
-}
+**Chat with AI Agent (Requires "chat:use" permission):**
+```bash
+curl -X POST "http://localhost:8000/chat/" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <access_token>" \
+  -d '{"query": "What are recent database records?"}'
+# Response: {
+#   "answer": "Based on your query...",
+#   "token_usage": {
+#     "input_tokens": 150,
+#     "output_tokens": 85,
+#     "total_tokens": 235
+#   }
+# }
+```
+
+**List Users (Requires "user:read" permission):**
+```bash
+curl -X GET "http://localhost:8000/users/" \
+  -H "Authorization: Bearer <admin_token>"
+```
+
+**Refresh Access Token:**
+```bash
+curl -X POST "http://localhost:8000/auth/refresh" \
+  -H "Content-Type: application/json" \
+  -d '{"refresh_token": "<refresh_token>"}'
+# Response: {
+#   "access_token": "new_jwt_token",
+#   "token_type": "bearer"
+# }
+```
+
+**Logout (Revoke Token):**
+```bash
+curl -X POST "http://localhost:8000/auth/logout" \
+  -H "Authorization: Bearer <access_token>"
+# Response: {"message": "Logged out successfully"}
 ```
 
 ## How It Works
 
-1. **User Authentication**: User registers/logs in via `/auth/register` or `/auth/login`
-2. **JWT Token**: Backend generates JWT token for authenticated sessions
-3. **Chat Request**: User sends query to `/chat` endpoint with JWT token
-4. **Authorization**: Request is validated against user's roles and permissions
-5. **Service Initialization**: LanggraphService initializes MCP client
-6. **Pipeline Execution**: 
-   - Question is passed to the LangGraph pipeline
-   - `MainState` is created with the user's question
-7. **Agent Processing**:
-   - Agent retrieves available tools from MCP server
-   - Agent uses OpenAI LLM to determine which tools to use
-   - Tools are executed (e.g., database queries via MCP)
-   - LLM synthesizes final response from tool results
-8. **Response**: AI-generated answer with token usage stats is returned to client
+### Authentication Flow
+1. User registers with email and password
+2. User is assigned default "user" role
+3. Password is hashed using Argon2
+4. Access & refresh tokens are generated (JWT)
+5. Login validates credentials and generates new tokens
+6. Refresh token can generate new access tokens without password
+7. Logout revokes the refresh token
+
+### Authorization Flow
+1. Protected endpoints check JWT token validity
+2. SecurityHandler decodes and validates token
+3. User roles and permissions are retrieved from database
+4. Endpoint checks if user has required permission
+5. Returns 403 Forbidden if insufficient permissions
+
+### AI Chat Flow
+1. User sends query to `/chat/` with valid JWT token
+2. Permission check: requires "chat:use" permission
+3. Rate limiter: 5 requests per minute per IP
+4. LanggraphService initializes MCP client for tools
+5. LangGraph pipeline processes question:
+   - MainState created with user query
+   - ask_question node invokes OpenAI LLM with MCP tools
+   - Tools are executed (database operations)
+   - LLM synthesizes response
+6. Token usage is tracked and returned
+
+## Database Schema
+
+### Users Table
+- id (PK)
+- full_name
+- email (unique)
+- password_hash
+- is_active (default: True)
+- is_verified (default: False)
+- created_at
+- updated_at
+- relationships: roles (many-to-many)
+
+### Roles Table
+- id (PK)
+- name (unique)
+- relationships: permissions (many-to-many), users (many-to-many)
+
+### Permissions Table
+- id (PK)
+- name (unique) - e.g., "user:read", "chat:use", "role:manage"
+- relationships: roles (many-to-many)
+
+### UserRoles Table (Junction)
+- user_id (FK)
+- role_id (FK)
+
+### RolePermissions Table (Junction)
+- role_id (FK)
+- permission_id (FK)
+
+### RefreshTokens Table
+- id (PK)
+- user_id (FK)
+- jti (unique) - JWT ID for revocation
+- token
+- revoked (default: False)
+- expires_at
+- created_at
+
+## Permissions Reference
+
+| Permission | Description |
+|------------|-------------|
+| `user:create` | Create new users |
+| `user:read` | Read user information |
+| `user:update` | Update user details |
+| `user:delete` | Delete users |
+| `role:manage` | Manage roles and permissions |
+| `permission:manage` | Manage permission assignments |
+| `chat:use` | Use AI chat functionality |
+
+## Default Roles & Permissions
+
+### Admin Role
+- All permissions enabled
+
+### Manager Role
+- user:read
+- user:update
+
+### User Role
+- user:read
+- chat:use
 
 ## Rate Limiting
 
-The `/chat` endpoint is rate limited using SlowAPI. Configuration can be adjusted in `main.py` or `routers/chat.py`. Exceeding the limit will result in a 429 (Too Many Requests) response.
+- `/chat/` endpoint: 5 requests per minute per IP address (SlowAPI)
+- Exceeding limit returns 429 (Too Many Requests)
 
 ## Environment Configuration
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `MCP_HOST` | MCP server hostname | `localhost` |
-| `MCP_PORT` | MCP server port | `8001` |
-| `MCP_URL` | MCP server full URL | `http://localhost:8001/mcp` |
-| `MYSQL_HOST` | MySQL server hostname | `localhost` |
-| `MYSQL_PORT` | MySQL server port | `3306` |
+| `DB_CONNECTION` | Database driver | `mysql+pymysql` |
+| `MYSQL_HOST` | MySQL hostname | `localhost` |
+| `MYSQL_PORT` | MySQL port | `3306` |
 | `MYSQL_USER` | MySQL username | `root` |
 | `MYSQL_PASSWORD` | MySQL password | `root` |
 | `MYSQL_DATABASE` | Database name | `python_dummy` |
 | `OPENAI_API_KEY` | OpenAI API key | **Required** |
-| `OPENAI_MODEL` | OpenAI model to use | `gpt-3.5-turbo` |
-
-## Dependencies
-
-See `requirements.txt` for the complete list. Key dependencies:
-
-### Web & API
-- `fastapi[standard]`: Web framework and utilities
-- `uvicorn`: ASGI server
-
-### AI & LLM
-- `langchain`: LLM framework
-- `langchain-openai`: OpenAI integration
-- `langgraph`: Agent orchestration
-- `langchain-mcp-adapters`: MCP support
-
-### Database
-- `mysql-connector-python`: MySQL connectivity
-- `PyMySQL`: Pure Python MySQL driver
-- `SQLAlchemy`: ORM and database toolkit
-
-### Security & Authentication
-- `PyJWT`: JWT token handling
-- `pwdlib[argon2]`: Password hashing with Argon2
-
-### Utilities
-- `slowapi`: Rate limiting
-- `mcp`: Model Context Protocol
-
-## Development
-
-### Adding New Endpoints
-
-1. Create a new file in the `routers/` directory
-2. Define FastAPI router with endpoints
-3. Create corresponding service in `service/` directory
-4. Define request/response schemas in `schemas/` directory
-5. Include the router in `main.py`:
-   ```python
-   from routers import my_feature
-   app.include_router(my_feature.router)
-   ```
-
-### Adding MCP Tools
-
-1. Ensure your MCP server is running and exposing tools
-2. Tools are automatically discovered via the MCP client in `LanggraphService`
-3. The agent will have access to all exposed MCP tools
-
-### Extending the Agent
-
-Modify `service/langgraph_service.py` to:
-- Add system prompts to guide agent behavior
-- Implement custom node functions in the pipeline
-- Add pre/post-processing steps
-- Extend `MainState` with additional state fields
-
-### Database Seeding
-
-Run the seed script to populate initial data:
-```bash
-python -m utils.seed
-```
+| `OPENAI_MODEL` | OpenAI model | `gpt-3.5-turbo` |
+| `SECRET_KEY` | JWT secret key | **Required** |
+| `ALGORITHM` | JWT algorithm | `HS256` |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | Access token TTL | `15` |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | Refresh token TTL | `7` |
+| `MCP_HOST` | MCP server hostname | `localhost` |
+| `MCP_PORT` | MCP server port | `8001` |
+| `MCP_URL` | MCP server URL | `http://localhost:8001/mcp` |
 
 ## Troubleshooting
 
+### Database Connection Error
+- Verify MySQL is running: `mysql -h localhost -u root -p`
+- Check credentials in `.env`
+- Ensure database exists: `CREATE DATABASE python_dummy;`
+- Verify connection string format in `database.py`
+
+### JWT Token Error
+- Ensure `SECRET_KEY` is set in `.env`
+- Verify token format: `Authorization: Bearer <token>`
+- Check token expiry using JWT debugger at jwt.io
+- Refresh token if expired: use `/auth/refresh` endpoint
+
+### Permission Denied (403)
+- Verify user has required role: check `/auth/me` endpoint
+- Verify role has required permission: check database `role_permissions` table
+- Check permission name matches exactly (case-sensitive)
+
 ### MCP Connection Error
-- Ensure MCP server is running on the configured host/port
-- Check `MCP_URL` in `.env` (should match MCP server address)
-- Verify network connectivity between application and MCP server
+- Ensure MCP server running on configured `MCP_URL`
+- Verify network connectivity
+- Check `MCP_HOST` and `MCP_PORT` in `.env`
 
 ### OpenAI API Error
-- Verify `OPENAI_API_KEY` is correct and has sufficient quota
-- Check API rate limits and usage
-- Ensure model name in `OPENAI_MODEL` is valid and accessible
-- Monitor token usage in response payloads
+- Verify `OPENAI_API_KEY` is correct
+- Check API quota and rate limits
+- Ensure model in `OPENAI_MODEL` is valid
+- Monitor token usage in response
 
-### Database Connection Error
-- Verify MySQL is running and accessible
-- Check credentials in `.env` match your database setup
-- Ensure target database exists
-- Test connection: `mysql -h localhost -u root -p`
-
-### Authentication/Authorization Error
-- Verify JWT token is valid and not expired
-- Check user has required role/permissions
-- Review role assignments in database
-- Ensure token is included in Authorization header: `Bearer <token>`
-
-### Rate Limiting Errors
-- Wait before making new requests (check 429 response headers)
-- Adjust rate limits in `routers/chat.py` if needed
-- Consider implementing request queuing for high-volume scenarios
-
-## API Documentation
-
-Once the server is running, you can access the interactive API documentation:
-- **Swagger UI**: http://localhost:8000/docs
-- **ReDoc**: http://localhost:8000/redoc
+### Rate Limiting Error (429)
+- Wait before making new requests
+- Check X-RateLimit-Remaining header
+- Adjust rate limit in `routers/chat.py` if needed
 
 ## Contributing
 
