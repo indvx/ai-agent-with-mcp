@@ -5,7 +5,7 @@ from database import get_db
 from schemas.auth import LoginRequest, RegisterRequest, RefreshTokenRequest
 from service.auth import AuthService
 from core.security import SecurityHandler
-from sql.model.users import User
+from sql.models.users import User
 from schemas.users import UserResponse
 
 router = APIRouter(
