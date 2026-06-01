@@ -19,8 +19,8 @@ This project implements an AI-driven agent that leverages:
 - 🛠️ **MCP Integration**: Standardized tool protocol for database operations
 - 🚀 **FastAPI Server**: Modern, fast web framework with automatic API documentation
 - 🔐 **Authentication & Authorization**: JWT-based user authentication with role management
-- 👥 **User Management**: Complete user lifecycle management
-- 💾 **Database Support**: MySQL integration for data operations
+- 👥 **User Management**: Complete user lifecycle management with roles and permissions
+- 💾 **Database Support**: MySQL integration with SQLAlchemy ORM for data operations
 - 📊 **Health Checks**: Built-in health monitoring endpoints
 - 📈 **Token Usage Tracking**: Monitors and tracks OpenAI API token consumption
 
@@ -106,18 +106,44 @@ FastAPI Server
    OPENAI_MODEL='gpt-3.5-turbo'  # or 'gpt-4', 'gpt-4-turbo', etc.
    ```
 
+5. **Initialize the database** (optional - seed with initial data)
+   ```bash
+   python -m utils.seed
+   ```
+
 ## Project Structure
 
 ```
 ai-agent-with-mcp/
 ├── main.py                      # FastAPI application & router setup
+├── database.py                  # Database configuration & session management
+├── core/
+│   └── security.py             # Security utilities (JWT, password hashing)
 ├── routers/
+│   ├── __init__.py
 │   ├── chat.py                 # Chat endpoint (AI agent interaction)
 │   ├── auth.py                 # Authentication endpoints
 │   ├── user.py                 # User management endpoints
 │   └── role.py                 # Role management endpoints
 ├── service/
-│   └── langgraph_service.py    # LangGraph agent orchestration
+│   ├── __init__.py
+│   ├── base_service.py         # Base service class
+│   ├── auth.py                 # Authentication business logic
+│   ├── user.py                 # User business logic
+│   ├── role.py                 # Role business logic
+│   ├── langgraph_service.py    # LangGraph agent orchestration
+│   └── utility.py              # Utility functions
+├── schemas/
+│   ├── auth.py                 # Auth request/response schemas
+│   ├── chat.py                 # Chat request/response schemas
+│   ├── role.py                 # Role schemas
+│   └── users.py                # User schemas
+├── sql/
+│   ├── models/                 # SQLAlchemy ORM models
+│   └── crud/                   # Database CRUD operations
+├── utils/
+│   ├── __init__.py
+│   └── seed.py                 # Database seeding utility
 ├── requirements.txt             # Python dependencies
 ├── .env-example                # Environment variables template
 ├── .gitignore                  # Git ignore rules
@@ -126,49 +152,40 @@ ai-agent-with-mcp/
 
 ## File Descriptions
 
-### `main.py`
-FastAPI application entry point with:
-- **GET `/`**: Welcome message
-- **GET `/health`**: Health check endpoint (returns `{"status": "ok"}`)
-- Router inclusions for chat, auth, user, and role endpoints
+### Core Application
+- **`main.py`**: FastAPI application entry point with router inclusions
+- **`database.py`**: Database configuration, session factory, and connection management
 
-### `routers/chat.py`
-Chat endpoint implementation containing:
-- **POST `/chat`**: Main chat interface for AI agent interaction
-  - Accepts user queries
-  - Processes through LangGraph pipeline
-  - Returns AI-generated responses with token usage data
+### Core Security (`core/`)
+- **`core/security.py`**: JWT token handling, password hashing, and authentication utilities
 
-### `routers/auth.py`
-Authentication endpoints for:
-- User login and registration
-- JWT token generation and validation
-- Session management
+### API Routes (`routers/`)
+- **`routers/chat.py`**: POST `/chat` endpoint for AI agent interaction with rate limiting
+- **`routers/auth.py`**: Authentication endpoints (login, register, token validation)
+- **`routers/user.py`**: User management endpoints (create, read, update, delete)
+- **`routers/role.py`**: Role management endpoints for RBAC
 
-### `routers/user.py`
-User management endpoints for:
-- User profile management
-- User data operations
-- User lifecycle operations
+### Business Logic (`service/`)
+- **`service/base_service.py`**: Base service class with common functionality
+- **`service/auth.py`**: Authentication service (login, registration, token management)
+- **`service/user.py`**: User service operations
+- **`service/role.py`**: Role service operations
+- **`service/langgraph_service.py`**: Core agent service with:
+  - `MainState`: TypedDict for conversation state
+  - `LanggraphService`: Agent orchestration with MCP client
+- **`service/utility.py`**: Utility service functions
 
-### `routers/role.py`
-Role-based access control endpoints for:
-- Role definition and management
-- Permission assignment
-- Role-based authorization
+### Data Models & Schemas
+- **`schemas/`**: Pydantic models for request/response validation
+  - `auth.py`: Login, registration schemas
+  - `chat.py`: Chat request/response schemas
+  - `role.py`: Role schemas
+  - `users.py`: User schemas
+- **`sql/models/`**: SQLAlchemy ORM models for database tables
+- **`sql/crud/`**: CRUD operations for database interactions
 
-### `service/langgraph_service.py`
-Core agent service containing:
-- **MainState**: TypedDict defining conversation state:
-  - `question`: User's input query
-  - `answer`: AI-generated response
-  - `token_usage`: OpenAI API token consumption metadata
-- **LanggraphService**: Main service class handling:
-  - MCP client initialization via `initialize()`
-  - Tool retrieval from MCP server
-  - Agent execution with OpenAI LLM
-  - Token usage tracking via callback handler
-  - LangGraph pipeline construction via `build_pipeline()`
+### Utilities (`utils/`)
+- **`utils/seed.py`**: Database seeding script for initial data population
 
 ## Usage
 
@@ -191,10 +208,32 @@ curl http://localhost:8000/health
 # Response: {"status": "ok"}
 ```
 
-**Chat Query** (example):
+**User Registration:**
+```bash
+curl -X POST "http://localhost:8000/auth/register" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "user@example.com",
+    "password": "secure_password"
+  }'
+```
+
+**User Login:**
+```bash
+curl -X POST "http://localhost:8000/auth/login" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "user@example.com",
+    "password": "secure_password"
+  }'
+# Response: {"access_token": "jwt_token_here", "token_type": "bearer"}
+```
+
+**Chat Query** (requires JWT token):
 ```bash
 curl -X POST "http://localhost:8000/chat" \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <your_jwt_token>" \
   -d '{"query": "What are my recent database records?"}'
 ```
 
@@ -212,19 +251,20 @@ curl -X POST "http://localhost:8000/chat" \
 
 ## How It Works
 
-1. **Request**: User sends a chat query to the `/chat` endpoint
-2. **Authentication**: JWT token is validated (if required by endpoint)
-3. **Service Initialization**: LanggraphService initializes MCP client
-4. **Pipeline Execution**: 
+1. **User Authentication**: User registers/logs in via `/auth/register` or `/auth/login`
+2. **JWT Token**: Backend generates JWT token for authenticated sessions
+3. **Chat Request**: User sends query to `/chat` endpoint with JWT token
+4. **Authorization**: Request is validated against user's roles and permissions
+5. **Service Initialization**: LanggraphService initializes MCP client
+6. **Pipeline Execution**: 
    - Question is passed to the LangGraph pipeline
    - `MainState` is created with the user's question
-5. **Agent Processing**:
+7. **Agent Processing**:
    - Agent retrieves available tools from MCP server
    - Agent uses OpenAI LLM to determine which tools to use
    - Tools are executed (e.g., database queries via MCP)
    - LLM synthesizes final response from tool results
-6. **Response**: AI-generated answer with token usage stats is returned to client
-7. **Authorization**: Response is subject to user's role-based permissions
+8. **Response**: AI-generated answer with token usage stats is returned to client
 
 ## Rate Limiting
 
@@ -278,7 +318,9 @@ See `requirements.txt` for the complete list. Key dependencies:
 
 1. Create a new file in the `routers/` directory
 2. Define FastAPI router with endpoints
-3. Include the router in `main.py`:
+3. Create corresponding service in `service/` directory
+4. Define request/response schemas in `schemas/` directory
+5. Include the router in `main.py`:
    ```python
    from routers import my_feature
    app.include_router(my_feature.router)
@@ -297,6 +339,13 @@ Modify `service/langgraph_service.py` to:
 - Implement custom node functions in the pipeline
 - Add pre/post-processing steps
 - Extend `MainState` with additional state fields
+
+### Database Seeding
+
+Run the seed script to populate initial data:
+```bash
+python -m utils.seed
+```
 
 ## Troubleshooting
 
@@ -321,11 +370,18 @@ Modify `service/langgraph_service.py` to:
 - Verify JWT token is valid and not expired
 - Check user has required role/permissions
 - Review role assignments in database
+- Ensure token is included in Authorization header: `Bearer <token>`
 
 ### Rate Limiting Errors
 - Wait before making new requests (check 429 response headers)
 - Adjust rate limits in `routers/chat.py` if needed
 - Consider implementing request queuing for high-volume scenarios
+
+## API Documentation
+
+Once the server is running, you can access the interactive API documentation:
+- **Swagger UI**: http://localhost:8000/docs
+- **ReDoc**: http://localhost:8000/redoc
 
 ## Contributing
 
