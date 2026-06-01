@@ -97,7 +97,13 @@ class AuthService(BaseService):
         ref_token = refresh_token_crud.get_token_by_jti_or_user_id(self.db, jti=jti)
 
         if not ref_token:
-            raise HTTPException(status_code=401, detail=("Invalid refresh token"))
+            raise HTTPException(status_code=401, detail=("Token not found"))
+
+        if ref_token.revoked:
+            raise HTTPException(status_code=401, detail=("Token is expired or revoked"))
+
+        if refresh_token_crud.is_refresh_token_expired(ref_token):
+            raise HTTPException(status_code=401, detail=("Token is expired"))
 
         access_token = self.create_jwt_token(ref_token.user_id, type="access")
         return {"access_token": access_token, "token_type": "bearer"}
