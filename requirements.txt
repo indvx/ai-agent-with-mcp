@@ -6,3 +6,5 @@ langgraph == 1.2.1
 mysql-connector-python == 9.7.0
 mcp == 1.27.1
 slowapi == 0.1.9
+pyjwt == 2.13.0
+pwdlib[argon2] == 0.3.0

@@ -10,11 +10,13 @@ load_dotenv()
 
 from langchain.agents import create_agent
 from langchain_mcp_adapters.client import MultiServerMCPClient
+from langchain_core.callbacks import UsageMetadataCallbackHandler
 
 
 class MainState(TypedDict):
     question: Optional[str]
     answer: Optional[str]
+    token_usage: Optional[dict]
 
 
 llm = ChatOpenAI(
@@ -27,6 +29,7 @@ class LanggraphService:
         self.__graph = None
         self.__mcp_client = None
         self.__mcp_url = os.getenv("MCP_URL", "http://localhost:8001/mcp")
+        self.callback = UsageMetadataCallbackHandler()
 
     async def initialize(self):
         self.__mcp_client = MultiServerMCPClient(
@@ -46,11 +49,13 @@ class LanggraphService:
 
         tools = await self.__mcp_client.get_tools()
         agent = create_agent(llm, tools)
-        result = await agent.ainvoke({"messages": messages})
+        result = await agent.ainvoke(
+            {"messages": messages}, 
+            config={"callbacks": [self.callback]}
+        )
 
         ai_response = result["messages"][-1].content
-
-        return {"answer": ai_response}
+        return {"answer": ai_response, "token_usage": self.callback.usage_metadata}
 
     def build_pipeline(self):
         if self.__graph is not None:
