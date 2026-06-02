@@ -8,8 +8,6 @@ app = FastAPI(
     title="MCP Chat API",
     description="API for MCP Chat application",
     version="1.0.0",
-    docs_url=None,
-    redoc_url=None,
 )
 
 
