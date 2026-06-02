@@ -1,14 +1,10 @@
 from fastapi import FastAPI, Request
-from routers import chat, auth, role, user
+from routers import chat
 
 app = FastAPI()
 
 
 app.include_router(chat.router)
-app.include_router(auth.router)
-app.include_router(role.router)
-app.include_router(user.router)
-
 
 @app.get("/")
 async def root():
