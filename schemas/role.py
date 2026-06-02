@@ -14,6 +14,7 @@ class RoleResponse(BaseModel):
     id: int
     name: str
     description: str | None
+    is_default: bool | None
 
     permissions: List[PermissionResponse] = []
 

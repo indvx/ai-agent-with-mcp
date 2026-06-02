@@ -1,8 +1,12 @@
-from mcp.server.fastmcp import FastMCP
-import mysql.connector
-import sys
-from dotenv import load_dotenv
 import os
+import sys
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from mcp.server.fastmcp import FastMCP
+from database import engine 
+from sqlalchemy import text
+from dotenv import load_dotenv
 
 load_dotenv()
 
@@ -14,114 +18,101 @@ mcp = FastMCP(
 )
 
 def get_conn():
-    return mysql.connector.connect(
-        host=os.getenv("MYSQL_HOST"),
-        port=os.getenv("MYSQL_PORT"),
-        user=os.getenv("MYSQL_USER"),
-        password=os.getenv("MYSQL_PASSWORD"),
-        database=os.getenv("MYSQL_DATABASE")
-    )
+    return engine.connect()
 
 
-@mcp.tool()
-def add_record(table: str, data: dict) -> str:
+# @mcp.tool()
+# def add_record(table: str, data: dict) -> str:
 
-    print(f"Adding data {data} in the table {table}")
-    conn = get_conn()
-    cur = conn.cursor()
+#     print(f"Adding data {data} in the table {table}")
+#     conn = get_conn()
+   
+#     columns = ", ".join(data.keys())
+#     placeholders = ", ".join([f":{k}" for k in data.keys()])
 
-    columns = ", ".join(data.keys())
-    placeholders = ", ".join(["%s"] * len(data))
-    values = list(data.values())
+#     query = text(f"""
+#         INSERT INTO {table} ({columns})
+#         VALUES ({placeholders})
+#     """)
 
-    query = f"""
-        INSERT INTO {table} ({columns})
-        VALUES ({placeholders})
-    """
+#     print(query, data)
+#     conn.execute(query, data)
 
-    cur.execute(query, values)
-
-    conn.commit()
-    conn.close()
+#     conn.commit()
+#     conn.close()
     
-    print(f"Record successfully added in {table}")
+#     print(f"Record successfully added in {table}")
 
-    return f"Record added to {table}"
+#     return f"Record added to {table}"
 
 
 @mcp.tool()
 def list_records(table: str) -> list:
     print('listing_records', "table", table)
     conn = get_conn()
-    cur = conn.cursor(dictionary=True)
-
-    query = f"SELECT * FROM {table}"
-
-    cur.execute(query)
-
-    rows = cur.fetchall()
+    query = text(f"SELECT * FROM {table}")
+    result = conn.execute(query)
+    rows = [dict(row) for row in result.mappings()]
 
     conn.close()
     print(f"Listing records {len(rows)} from table {table} successfully")
     return rows
 
 
-@mcp.tool()
-def update_record(table: str, record_id: int, data: dict) -> str:
+# @mcp.tool()
+# def update_record(table: str, record_id: int, data: dict) -> str:
 
-    print('Updating record', record_id, "data", data)
-    conn = get_conn()
-    cur = conn.cursor()
+#     print('Updating record', record_id, "data", data)
+#     conn = get_conn()
 
-    set_clause = ", ".join([f"{k}=%s" for k in data.keys()])
-    values = list(data.values())
+#     set_clause = ", ".join([f"{k}=:{k}" for k in data.keys()])
+    
+#     query = text(f"""
+#         UPDATE {table}
+#         SET {set_clause}
+#         WHERE id = :record_id
+#     """)
 
-    query = f"""
-        UPDATE {table}
-        SET {set_clause}
-        WHERE id = %s
-    """
+#     params = {**data, "record_id": record_id}
 
-    values.append(record_id)
+#     conn.execute(query, params)
 
-    cur.execute(query, values)
-
-    conn.commit()
-    conn.close()
-    print("Updated record successfully")
-    return f"Record {record_id} updated in {table}"
+#     conn.commit()
+#     conn.close()
+#     print("Updated record successfully")
+#     return f"Record {record_id} updated in {table}"
 
 
-@mcp.tool()
-def delete_record(table: str, record_id: int) -> str:
+# @mcp.tool()
+# def delete_record(table: str, record_id: int) -> str:
 
-    print(f"Deleting record {record_id} from table {table}")
-    conn = get_conn()
-    cur = conn.cursor()
+#     print(f"Deleting record {record_id} from table {table}")
+#     conn = get_conn()
 
-    query = f"DELETE FROM {table} WHERE id = %s"
+#     query = text(f"DELETE FROM {table} WHERE id = :record_id")
 
-    cur.execute(query, (record_id,))
+#     conn.execute(query, {"record_id": record_id})
 
-    conn.commit()
-    conn.close()
-    print('delete_record', record_id)
-    return f"Record {record_id} deleted from {table}"
+#     conn.commit()
+#     conn.close()
+#     print('delete_record', record_id)
+#     return f"Record {record_id} deleted from {table}"
 
 
 @mcp.tool()
 def get_tables() -> list:
     print("Getting tables")
     conn = get_conn()
-    cur = conn.cursor()
 
-    cur.execute("""
+    query = text("""
         SELECT table_name
         FROM information_schema.tables
-        WHERE table_schema = %s
-    """, ("python_dummy",))
+        WHERE table_schema = :schema
+    """)
 
-    tables = [row[0] for row in cur.fetchall()]
+    result = conn.execute(query, {"schema": "python_dummy"})
+
+    tables = [row[0] for row in result.fetchall()]
 
     conn.close()
     print(f"Getting {len(tables)} tables successfully")
@@ -133,20 +124,21 @@ def get_fields(table: str) -> list:
 
     print(f"Gettting fields of the {table} table")
     conn = get_conn()
-    cur = conn.cursor(dictionary=True)
 
-    cur.execute("""
+    query = text("""
         SELECT
             column_name,
             data_type,
             is_nullable,
             column_key
         FROM information_schema.columns
-        WHERE table_schema = %s
-        AND table_name = %s
-    """, ("python_dummy", table))
+        WHERE table_schema = :schema
+        AND table_name = :table
+    """)
 
-    fields = cur.fetchall()
+    result = conn.execute(query, {"schema": "python_dummy", "table": table})
+
+    fields = [dict(row) for row in result.mappings()]
 
     conn.close()
 

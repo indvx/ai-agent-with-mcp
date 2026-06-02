@@ -97,7 +97,7 @@ class AuthService(BaseService):
         if not ref_token:
             raise HTTPException(status_code=401, detail=("Token not found"))
 
-        if ref_token.revoked:
+        if bool(ref_token.revoked):
             raise HTTPException(status_code=401, detail=("Token is revoked"))
 
         if refresh_token_crud.is_refresh_token_expired(ref_token):

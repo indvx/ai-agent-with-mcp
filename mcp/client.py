@@ -18,12 +18,12 @@ async def main():
             tools =  await session.list_tools()
             print(f"Available tools: {[tool.name for tool in tools.tools]}")
 
-            print("Adding user...")
-            result = await session.call_tool("add_user", arguments={"name": "John Doe", "age": 30})
+            print("Getting tables...")
+            result = await session.call_tool("get_tables")
             print("result", result.content)
 
             print("Listing users...")
-            result = await session.call_tool("list_users")
+            result = await session.call_tool("list_records", arguments={"table": "users"})
             print("result", result.content)
     
 if __name__ == "__main__":

@@ -16,7 +16,7 @@ router = APIRouter(
 role_service = RoleService()
 
 
-@router.get("/", dependencies=[Depends(SecurityHandler().has_permissions(["role:manage"]))])
+@router.get("/", dependencies=[Depends(SecurityHandler().has_permissions(["role:manage"]))], response_model=List[RoleResponse])
 def get_roles():
     return role_service.get_roles()
 
