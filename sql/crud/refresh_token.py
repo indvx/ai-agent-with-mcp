@@ -36,7 +36,6 @@ def create_or_update_refresh_token(
             refresh_token.expires_at = expires_at
         if revoked is not None:
             refresh_token.revoked = revoked
-        db.commit()
 
     else:
         refresh_token = refresh_token_model.RefreshToken(

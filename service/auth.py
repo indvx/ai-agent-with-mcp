@@ -33,9 +33,8 @@ class AuthService(BaseService):
 
         user = user_crud.create_user(
             self.db,
-            email=payload.email,
-            full_name=payload.full_name,
-            password_hash=payload.password,
+            data=payload.dict(),
+            default_role=default_role
         )
 
         access_token = self.create_jwt_token(user.id, type="access")

@@ -15,13 +15,17 @@ mcp = FastMCP(
 )
 
 def get_conn():
-    return mysql.connector.connect(
-        host=os.getenv("MYSQL_HOST"),
-        port=os.getenv("MYSQL_PORT"),
-        user=os.getenv("MYSQL_USER"),
-        password=os.getenv("MYSQL_PASSWORD"),
-        database=os.getenv("MYSQL_DATABASE"),
-    )
+    try:
+        return mysql.connector.connect(
+            host=os.getenv("MYSQL_HOST"),
+            port=os.getenv("MYSQL_PORT"),
+            user=os.getenv("MYSQL_USER"),
+            password=os.getenv("MYSQL_PASSWORD"),
+            database=os.getenv("MYSQL_DATABASE"),
+        )
+    except mysql.connector.Error as err:
+        print(f"Error: {err}")
+        raise err
 
 
 @mcp.tool(description="Count records in a table")
