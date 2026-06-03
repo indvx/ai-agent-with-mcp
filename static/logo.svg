@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4F46E5"/>
+      <stop offset="100%" stop-color="#06B6D4"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="256" height="256" rx="56" fill="url(#grad)"/>
+
+  <!-- Chat Bubble -->
+  <path
+    d="M64 72
+       C64 54 78 40 96 40
+       H160
+       C178 40 192 54 192 72
+       V124
+       C192 142 178 156 160 156
+       H118
+       L84 184
+       V156
+       H96
+       C78 156 64 142 64 124
+       Z"
+    fill="white"
+  />
+
+  <!-- API Network -->
+  <line x1="102" y1="98" x2="128" y2="82" stroke="#4F46E5" stroke-width="6"/>
+  <line x1="128" y1="82" x2="154" y2="98" stroke="#4F46E5" stroke-width="6"/>
+  <line x1="128" y1="82" x2="128" y2="116" stroke="#4F46E5" stroke-width="6"/>
+
+  <circle cx="102" cy="98" r="10" fill="#06B6D4"/>
+  <circle cx="128" cy="82" r="10" fill="#4F46E5"/>
+  <circle cx="154" cy="98" r="10" fill="#06B6D4"/>
+  <circle cx="128" cy="116" r="10" fill="#4F46E5"/>
+
+  <!-- MCP Label -->
+  <text
+    x="128"
+    y="225"
+    text-anchor="middle"
+    font-family="Inter, Arial, sans-serif"
+    font-size="28"
+    font-weight="700"
+    fill="white">
+    MCP
+  </text>
+</svg>

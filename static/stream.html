@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Markdown Stream</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: auto;
+            padding: 20px;
+        }
+
+        #response {
+            border: 1px solid #ddd;
+            padding: 15px;
+            min-height: 200px;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <input id="query" placeholder="Ask something">
+    <button id="send">Send</button>
+
+    <hr>
+
+    <div id="response"></div>
+
+    <script>
+        document.getElementById('send').onclick = async () => {
+
+            let markdownText = '';
+
+            const responseDiv = document.getElementById('response');
+            responseDiv.innerHTML = '';
+
+            const res = await fetch('/chat/stream', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    query: document.getElementById('query').value
+                })
+            });
+
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+
+            while (true) {
+                const { done, value } = await reader.read();
+
+                if (done) break;
+
+                markdownText += decoder.decode(value, {
+                    stream: true
+                });
+
+                // Re-render markdown as chunks arrive
+                responseDiv.innerHTML = marked.parse(markdownText);
+            }
+        };
+    </script>
+
+</body>
+
+</html>

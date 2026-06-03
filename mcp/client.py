@@ -14,12 +14,12 @@ async def main():
             tools = await session.list_tools()
             print(f"Available tools: {[tool.name for tool in tools.tools]}")
 
-            print("Listing available database tables...")
-            result = await session.call_tool("get_tables")
+            print("count available database tables...")
+            result = await session.call_tool("count_records_table", arguments={"table": "users"})
             print("tables:", result.content)
 
             print("Example: list records from a table")
-            result = await session.call_tool("list_records", arguments={"table": "your_table"})
+            result = await session.call_tool("list_records", arguments={"table": "users"})
             print("records:", result.content)
 
 

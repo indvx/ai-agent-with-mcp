@@ -1,4 +1,5 @@
 from mcp.server.fastmcp import FastMCP
+from typing import Optional
 import mysql.connector
 import sys
 from dotenv import load_dotenv
@@ -13,51 +14,97 @@ mcp = FastMCP(
     port=os.getenv("MCP_PORT"),
 )
 
+
 def get_conn():
     return mysql.connector.connect(
         host=os.getenv("MYSQL_HOST"),
         port=os.getenv("MYSQL_PORT"),
         user=os.getenv("MYSQL_USER"),
         password=os.getenv("MYSQL_PASSWORD"),
-        database=os.getenv("MYSQL_DATABASE")
+        database=os.getenv("MYSQL_DATABASE"),
     )
 
 
-@mcp.tool()
-def add_record(table: str, data: dict) -> str:
+@mcp.tool(description="Count records in a table")
+def count_records_table(
+    table: str,
+    field: Optional[str] = None,
+    value: Optional[str] = None,
+    desc: bool = False,
+) -> str:
 
-    print(f"Adding data {data} in the table {table}")
+    print(f"Counting records in table {table}")
+    print("field", field)
     conn = get_conn()
     cur = conn.cursor()
+    matched_field = None
+    if field:
+        fields = get_fields(table)
+        matched_field = [f for f in fields if field in f["COLUMN_NAME"]]
+        if not matched_field:
+            print(f"Field {field} not found in table {table}")
+            return f"Field {field} not found in table {table}"
 
-    columns = ", ".join(data.keys())
-    placeholders = ", ".join(["%s"] * len(data))
-    values = list(data.values())
+        query = f"""
+            SELECT COUNT(*) FROM {table} WHERE {matched_field[0]['COLUMN_NAME']} like %s
+        """
+    else:
+        query = f"""
+            SELECT COUNT(*) FROM {table}
+        """
 
-    query = f"""
-        INSERT INTO {table} ({columns})
-        VALUES ({placeholders})
-    """
+    if desc:
+        matched_field = matched_field or {"COLUMN_NAME": "id"}
+        query += " ORDER BY " + matched_field[0]["COLUMN_NAME"] + " DESC"
 
-    cur.execute(query, values)
-
-    conn.commit()
+    cur.execute(query, (f"%{value}%",) if field else None)
+    result = cur.fetchone()
     conn.close()
-    
-    print(f"Record successfully added in {table}")
 
-    return f"Record added to {table}"
+    if field:
+        print(f"Record successfully counted in {table} with field {field}: {result[0]}")
+        return f"Count of records in {table} with field {field}: {result[0]}"
+    else:
+        print(f"Record successfully counted in {table}: {result[0]}")
+        return f"Count of records in {table}: {result[0]}"
 
 
-@mcp.tool()
-def list_records(table: str) -> list:
-    print('listing_records', "table", table)
+@mcp.tool(description="List records from a table")
+def list_records(
+    table: str,
+    field: Optional[str] = None,
+    value: Optional[str] = None,
+    limit: int = 1,
+    desc: bool = False,
+) -> list:
+    print("listing_records", "table", table)
+    print("field", field)
+    print("value", value)
+    print("limit", limit)
+    print("desc", desc)
     conn = get_conn()
     cur = conn.cursor(dictionary=True)
+    matched_field = None
+    if field:
+        fields = get_fields(table)
+        matched_field = [f for f in fields if field in f["COLUMN_NAME"]]
+        if not matched_field:
+            print(f"Field {field} not found in table {table}")
+            return f"Field {field} not found in table {table}"
+        print(f"Matched field: {matched_field[0]['COLUMN_NAME']}")
+        query = f"SELECT * FROM {table} WHERE {matched_field[0]['COLUMN_NAME']} like %s"
+    else:
+        query = f"SELECT * FROM {table}"
 
-    query = f"SELECT * FROM {table}"
+    matched_field = matched_field or {"COLUMN_NAME": "id"}
+    query += (
+        " ORDER BY " + matched_field[0]["COLUMN_NAME"] + (" DESC" if desc else " ASC")
+    )
 
-    cur.execute(query)
+    if limit is not None:
+        query += f" limit {limit}"
+
+    cur.execute(query, (f"%{value}%",) if field else None)
 
     rows = cur.fetchall()
 
@@ -66,76 +113,60 @@ def list_records(table: str) -> list:
     return rows
 
 
-@mcp.tool()
-def update_record(table: str, record_id: int, data: dict) -> str:
-
-    print('Updating record', record_id, "data", data)
-    conn = get_conn()
-    cur = conn.cursor()
-
-    set_clause = ", ".join([f"{k}=%s" for k in data.keys()])
-    values = list(data.values())
-
-    query = f"""
-        UPDATE {table}
-        SET {set_clause}
-        WHERE id = %s
-    """
-
-    values.append(record_id)
-
-    cur.execute(query, values)
-
-    conn.commit()
-    conn.close()
-    print("Updated record successfully")
-    return f"Record {record_id} updated in {table}"
-
-
-@mcp.tool()
-def delete_record(table: str, record_id: int) -> str:
-
-    print(f"Deleting record {record_id} from table {table}")
-    conn = get_conn()
-    cur = conn.cursor()
-
-    query = f"DELETE FROM {table} WHERE id = %s"
-
-    cur.execute(query, (record_id,))
-
-    conn.commit()
-    conn.close()
-    print('delete_record', record_id)
-    return f"Record {record_id} deleted from {table}"
-
-
-@mcp.tool()
-def get_tables() -> list:
+@mcp.tool(description="Count all tables in the database")
+def count_all_tables() -> str:
     print("Getting tables")
     conn = get_conn()
     cur = conn.cursor()
 
-    cur.execute("""
+    cur.execute(
+        """
         SELECT table_name
         FROM information_schema.tables
         WHERE table_schema = %s
-    """, ("python_dummy",))
+    """,
+        (os.getenv("MYSQL_DATABASE"),),
+    )
 
     tables = [row[0] for row in cur.fetchall()]
 
     conn.close()
     print(f"Getting {len(tables)} tables successfully")
+    return f"Count of tables in the database: {len(tables)}"
+
+
+@mcp.tool(description="Get table names")
+def get_table_names() -> list:
+    print("Getting tables")
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute(
+        """
+        SELECT table_name
+        FROM information_schema.tables
+        WHERE table_schema = %s
+    """,
+        (os.getenv("MYSQL_DATABASE"),),
+    )
+
+    tables = [row[0] for row in cur.fetchall()]
+
+    conn.close()
+    print(tables)
+    print(f"Getting {len(tables)} tables successfully")
     return tables
 
 
-@mcp.tool()
+@mcp.tool(description="Get fields of a table")
 def get_fields(table: str) -> list:
 
     print(f"Gettting fields of the {table} table")
     conn = get_conn()
     cur = conn.cursor(dictionary=True)
 
-    cur.execute("""
+    cur.execute(
+        """
         SELECT
             column_name,
             data_type,
@@ -144,7 +175,9 @@ def get_fields(table: str) -> list:
         FROM information_schema.columns
         WHERE table_schema = %s
         AND table_name = %s
-    """, ("python_dummy", table))
+    """,
+        (os.getenv("MYSQL_DATABASE"), table),
+    )
 
     fields = cur.fetchall()
 
@@ -152,6 +185,35 @@ def get_fields(table: str) -> list:
 
     print(f"Getting fields of the {table} table successfully")
     return fields
+
+
+@mcp.tool(description="Count fields of a table")
+def count_fields(table: str, field: str, value: str) -> str:
+    print(f"Counting fields of the {table} table")
+    conn = get_conn()
+    cur = conn.cursor(dictionary=True)
+
+    cur.execute(
+        """
+        SELECT
+            column_name,
+            data_type,
+            is_nullable,
+            column_key
+        FROM information_schema.columns
+        WHERE table_schema = %s
+        AND table_name = %s
+    """,
+        (os.getenv("MYSQL_DATABASE"), table),
+    )
+
+    fields = cur.fetchall()
+
+    conn.close()
+
+    print(f"Counting fields of the {table} table successfully")
+    return f"{len(fields)} fields in the {table} table, {field} field has {value} value"
+
 
 if __name__ == "__main__":
     print("Starting MCP Server...", file=sys.stderr)
