@@ -1,6 +1,6 @@
 # AI Agent with MCP
 
-An intelligent AI agent powered by LangGraph and Model Context Protocol (MCP) that provides a FastAPI-based chat interface with JWT authentication, role-based access control (RBAC), and database operations integrated with OpenAI's language models.
+An intelligent AI agent powered by LangGraph and Model Context Protocol (MCP) that provides a FastAPI-based chat interface with JWT authentication, role-based access control (RBAC), and database operations.
 
 ## Overview
 
@@ -118,7 +118,6 @@ LanggraphService (AI Agent)
    Edit `.env` with your configuration:
    ```env
    # Database Configuration
-   DB_CONNECTION=mysql+pymysql
    MYSQL_HOST=localhost
    MYSQL_PORT=3306
    MYSQL_USER=root
@@ -187,6 +186,8 @@ ai-agent-with-mcp/
 ├── utils/
 │   ├── __init__.py
 │   └── seed.py                     # Database seeding (roles, permissions, admin user)
+├── static/
+│   └── logo.svg                    # API documentation logo
 ├── requirements.txt                # Python dependencies
 ├── .env-example                    # Environment variables template
 ├── .gitignore                      # Git ignore rules
@@ -196,7 +197,7 @@ ai-agent-with-mcp/
 ## File Descriptions
 
 ### Core Application
-- **`main.py`**: FastAPI application entry point. Includes all routers (auth, chat, user, role).
+- **`main.py`**: FastAPI application entry point. Includes all routers (auth, chat, user, role), custom Swagger UI with logo, and health check endpoint.
 - **`database.py`**: SQLAlchemy engine configuration with MySQL connection pooling, SessionLocal for dependency injection, Base for ORM models.
 
 ### Security & Authentication (`core/`)
@@ -274,6 +275,9 @@ ai-agent-with-mcp/
   - Permissions: user:create, user:read, user:update, user:delete, role:manage, permission:manage, chat:use
   - Roles: admin (all permissions), manager (limited), user (read-only)
   - Admin user: admin@test.com / Admin@123
+
+### Static Assets (`static/`)
+- **`static/logo.svg`**: Custom logo displayed in Swagger UI documentation
 
 ## Usage
 
@@ -492,7 +496,6 @@ curl -X POST "http://localhost:8000/auth/logout" \
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `DB_CONNECTION` | Database driver | `mysql+pymysql` |
 | `MYSQL_HOST` | MySQL hostname | `localhost` |
 | `MYSQL_PORT` | MySQL port | `3306` |
 | `MYSQL_USER` | MySQL username | `root` |
