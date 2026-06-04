@@ -57,7 +57,7 @@ def count_records_table(
         """
 
     if desc:
-        matched_field = matched_field or {"COLUMN_NAME": "id"}
+        matched_field = matched_field or [{"COLUMN_NAME": "id"}]
         query += " ORDER BY " + matched_field[0]["COLUMN_NAME"] + " DESC"
 
     cur.execute(query, (f"%{value}%",) if field else None)
@@ -99,7 +99,7 @@ def list_records(
     else:
         query = f"SELECT * FROM {table}"
 
-    matched_field = matched_field or {"COLUMN_NAME": "id"}
+    matched_field = matched_field or [{"COLUMN_NAME": "id"}]
     query += (
         " ORDER BY " + matched_field[0]["COLUMN_NAME"] + (" DESC" if desc else " ASC")
     )
