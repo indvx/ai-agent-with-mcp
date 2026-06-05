@@ -14,6 +14,7 @@ mcp = FastMCP(
     port=os.getenv("MCP_PORT"),
 )
 
+
 def get_conn():
     try:
         return mysql.connector.connect(
@@ -36,40 +37,46 @@ def count_records_table(
     desc: bool = False,
 ) -> str:
 
-    print(f"Counting records in table {table}")
-    print("field", field)
-    conn = get_conn()
-    cur = conn.cursor()
-    matched_field = None
-    if field:
-        fields = get_fields(table)
-        matched_field = [f for f in fields if field in f["COLUMN_NAME"]]
-        if not matched_field:
-            print(f"Field {field} not found in table {table}")
-            return f"Field {field} not found in table {table}"
+    try:
+        print(f"Counting records in table {table}")
+        print("field", field)
+        conn = get_conn()
+        cur = conn.cursor()
+        matched_field = None
+        if field:
+            fields = get_fields(table)
+            matched_field = [f for f in fields if field in f["COLUMN_NAME"]]
+            if not matched_field:
+                print(f"Field {field} not found in table {table}")
+                return f"Field {field} not found in table {table}"
 
-        query = f"""
-            SELECT COUNT(*) FROM {table} WHERE {matched_field[0]['COLUMN_NAME']} like %s
-        """
-    else:
-        query = f"""
-            SELECT COUNT(*) FROM {table}
-        """
+            query = f"""
+                SELECT COUNT(*) FROM {table} WHERE {matched_field[0]['COLUMN_NAME']} like %s
+            """
+        else:
+            query = f"""
+                SELECT COUNT(*) FROM {table}
+            """
 
-    if desc:
-        matched_field = matched_field or [{"COLUMN_NAME": "id"}]
-        query += " ORDER BY " + matched_field[0]["COLUMN_NAME"] + " DESC"
+        if desc:
+            matched_field = matched_field or [{"COLUMN_NAME": "id"}]
+            query += " ORDER BY " + matched_field[0]["COLUMN_NAME"] + " DESC"
 
-    cur.execute(query, (f"%{value}%",) if field else None)
-    result = cur.fetchone()
-    conn.close()
+        cur.execute(query, (f"%{value}%",) if field else None)
+        result = cur.fetchone()
+        conn.close()
 
-    if field:
-        print(f"Record successfully counted in {table} with field {field}: {result[0]}")
-        return f"Count of records in {table} with field {field}: {result[0]}"
-    else:
-        print(f"Record successfully counted in {table}: {result[0]}")
-        return f"Count of records in {table}: {result[0]}"
+        if field:
+            print(
+                f"Record successfully counted in {table} with field {field}: {result[0]}"
+            )
+            return f"Count of records in {table} with field {field}: {result[0]}"
+        else:
+            print(f"Record successfully counted in {table}: {result[0]}")
+            return f"Count of records in {table}: {result[0]}"
+    except Exception as e:
+        print(f"Error counting records: {e}")
+        return e
 
 
 @mcp.tool(description="List records from a table")
@@ -80,40 +87,48 @@ def list_records(
     limit: int = 1,
     desc: bool = False,
 ) -> list:
-    print("listing_records", "table", table)
-    print("field", field)
-    print("value", value)
-    print("limit", limit)
-    print("desc", desc)
-    conn = get_conn()
-    cur = conn.cursor(dictionary=True)
-    matched_field = None
-    if field:
-        fields = get_fields(table)
-        matched_field = [f for f in fields if field in f["COLUMN_NAME"]]
-        if not matched_field:
-            print(f"Field {field} not found in table {table}")
-            return f"Field {field} not found in table {table}"
-        print(f"Matched field: {matched_field[0]['COLUMN_NAME']}")
-        query = f"SELECT * FROM {table} WHERE {matched_field[0]['COLUMN_NAME']} like %s"
-    else:
-        query = f"SELECT * FROM {table}"
+    try:
+        print("listing_records", "table", table)
+        print("field", field)
+        print("value", value)
+        print("limit", limit)
+        print("desc", desc)
+        conn = get_conn()
+        cur = conn.cursor(dictionary=True)
+        matched_field = None
+        if field:
+            fields = get_fields(table)
+            matched_field = [f for f in fields if field in f["COLUMN_NAME"]]
+            if not matched_field:
+                print(f"Field {field} not found in table {table}")
+                return f"Field {field} not found in table {table}"
+            print(f"Matched field: {matched_field[0]['COLUMN_NAME']}")
+            query = (
+                f"SELECT * FROM {table} WHERE {matched_field[0]['COLUMN_NAME']} like %s"
+            )
+        else:
+            query = f"SELECT * FROM {table}"
 
-    matched_field = matched_field or [{"COLUMN_NAME": "id"}]
-    query += (
-        " ORDER BY " + matched_field[0]["COLUMN_NAME"] + (" DESC" if desc else " ASC")
-    )
+        matched_field = matched_field or [{"COLUMN_NAME": "id"}]
+        query += (
+            " ORDER BY "
+            + matched_field[0]["COLUMN_NAME"]
+            + (" DESC" if desc else " ASC")
+        )
 
-    if limit is not None:
-        query += f" limit {limit}"
+        if limit is not None:
+            query += f" limit {limit}"
 
-    cur.execute(query, (f"%{value}%",) if field else None)
+        cur.execute(query, (f"%{value}%",) if field else None)
 
-    rows = cur.fetchall()
+        rows = cur.fetchall()
 
-    conn.close()
-    print(f"Listing records {len(rows)} from table {table} successfully")
-    return rows
+        conn.close()
+        print(f"Listing records {len(rows)} from table {table} successfully")
+        return rows
+    except Exception as e:
+        print(f"Error listing records: {e}")
+        return e
 
 
 @mcp.tool(description="Count all tables in the database")
@@ -140,82 +155,93 @@ def count_all_tables() -> str:
 
 @mcp.tool(description="Get table names")
 def get_table_names() -> list:
-    print("Getting tables")
-    conn = get_conn()
-    cur = conn.cursor()
+    try:
+        print("Getting tables")
+        conn = get_conn()
+        cur = conn.cursor()
 
-    cur.execute(
-        """
-        SELECT table_name
-        FROM information_schema.tables
-        WHERE table_schema = %s
-    """,
-        (os.getenv("MYSQL_DATABASE"),),
-    )
+        cur.execute(
+            """
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_schema = %s
+        """,
+            (os.getenv("MYSQL_DATABASE"),),
+        )
 
-    tables = [row[0] for row in cur.fetchall()]
+        tables = [row[0] for row in cur.fetchall()]
 
-    conn.close()
-    print(tables)
-    print(f"Getting {len(tables)} tables successfully")
-    return tables
+        conn.close()
+        print(tables)
+        print(f"Getting {len(tables)} tables successfully")
+        return tables
+    except Exception as e:
+        print(f"Error getting tables: {e}")
+        return e
 
 
 @mcp.tool(description="Get fields of a table")
 def get_fields(table: str) -> list:
+    try:
+        print(f"Gettting fields of the {table} table")
+        conn = get_conn()
+        cur = conn.cursor(dictionary=True)
 
-    print(f"Gettting fields of the {table} table")
-    conn = get_conn()
-    cur = conn.cursor(dictionary=True)
+        cur.execute(
+            """
+            SELECT
+                column_name,
+                data_type,
+                is_nullable,
+                column_key
+            FROM information_schema.columns
+            WHERE table_schema = %s
+            AND table_name = %s
+        """,
+            (os.getenv("MYSQL_DATABASE"), table),
+        )
 
-    cur.execute(
-        """
-        SELECT
-            column_name,
-            data_type,
-            is_nullable,
-            column_key
-        FROM information_schema.columns
-        WHERE table_schema = %s
-        AND table_name = %s
-    """,
-        (os.getenv("MYSQL_DATABASE"), table),
-    )
+        fields = cur.fetchall()
 
-    fields = cur.fetchall()
+        conn.close()
 
-    conn.close()
-
-    print(f"Getting fields of the {table} table successfully")
-    return fields
+        print(f"Getting fields of the {table} table successfully")
+        return fields
+    except Exception as e:
+        print(f"Error getting fields: {e}")
+        return e
 
 
 @mcp.tool(description="Count fields of a table")
 def count_fields(table: str, field: str, value: str) -> str:
-    print(f"Counting fields of the {table} table")
-    conn = get_conn()
-    cur = conn.cursor(dictionary=True)
+    try:
+        print(f"Counting fields of the {table} table")
+        conn = get_conn()
+        cur = conn.cursor(dictionary=True)
 
-    cur.execute(
-        """
-        SELECT
-            column_name,
-            data_type,
-            is_nullable,
-            column_key
-        FROM information_schema.columns
-        WHERE table_schema = %s
-        AND table_name = %s
-    """,
-        (os.getenv("MYSQL_DATABASE"), table),
-    )
+        cur.execute(
+            """
+            SELECT
+                column_name,
+                data_type,
+                is_nullable,
+                column_key
+            FROM information_schema.columns
+            WHERE table_schema = %s
+            AND table_name = %s
+        """,
+            (os.getenv("MYSQL_DATABASE"), table),
+        )
 
-    fields = cur.fetchall()
+        fields = cur.fetchall()
 
-    conn.close()
+        conn.close()
 
-    print(f"Counting fields of the {table} table successfully")
-    return f"{len(fields)} fields in the {table} table, {field} field has {value} value"
+        print(f"Counting fields of the {table} table successfully")
+        return f"{len(fields)} fields in the {table} table, {field} field has {value} value"
+    except Exception as e:
+        print(f"Error counting fields: {e}")
+        return e
 
 
 if __name__ == "__main__":
