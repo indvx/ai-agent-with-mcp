@@ -7,6 +7,11 @@ import os
 from database import get_db
 from service.user import UserService
 
+db = next(get_db())
+secret_key = os.getenv("SECRET_KEY")
+algorithm = os.getenv("ALGORITHM", "HS256")
+user_service = UserService(db)
+
 
 class JWTBearer(HTTPBearer):
 
@@ -18,78 +23,86 @@ class JWTBearer(HTTPBearer):
         credentials = await super().__call__(request)
 
         if not credentials or credentials.scheme != "Bearer":
-            raise HTTPException(status_code=401, detail=("Invalid authentication"))
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=("Invalid authentication"),
+            )
 
         return credentials.credentials
 
 
-class SecurityHandler:
-    def __init__(self):
-        self.db = next(get_db())
-        self.secret_key = os.getenv("SECRET_KEY")
-        self.algorithm = os.getenv("ALGORITHM", "HS256")
-        self._user_service = UserService(self.db)
+def get_current_user(token: str = Depends(JWTBearer())):
 
-    def get_current_user(self, token: str = Depends(JWTBearer())):
+    payload = decode_token(token)
+    user_id = payload.get("sub")
 
-        payload = self.decode_token(token)
-        user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
+        )
 
-        if not user_id:
-            raise HTTPException(status_code=401, detail="Invalid token")
+    user = user_service.get_user(user_id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=("User not found")
+        )
 
-        user = self._user_service.get_user(user_id)
-        if not user:
-            raise HTTPException(status_code=404, detail=("User not found"))
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail=("Inactive user")
+        )
+    return user
 
-        if not user.is_active:
-            raise HTTPException(status_code=403, detail=("Inactive user"))
 
-        return user
+def has_roles(allowed_roles: list[str]):
+    def role_checker(current_user: User = Depends(get_current_user)):
+        user_roles = [role.name for role in (current_user.roles)]
+        has_role = any(role in user_roles for role in (allowed_roles))
 
-    def has_roles(self, allowed_roles: list[str]):
-        def role_checker(current_user: User = Depends(self.get_current_user)):
-            user_roles = [role.name for role in (current_user.roles)]
-            has_role = any(role in user_roles for role in (allowed_roles))
-
-            if not has_role:
-                raise HTTPException(status_code=403, detail=("Permission denied"))
-
-            return current_user
-
-        return role_checker
-
-    def has_permissions(self, allowed_permissions: list[str]):
-        def permission_checker(
-            current_user: User = Depends(self.get_current_user),
-        ):
-
-            permissions = []
-            for role in current_user.roles:
-                permissions.extend([p.name for p in (role.permissions)])
-
-            has_permission = any(
-                permission in permissions for permission in (allowed_permissions)
-            )
-
-            if not has_permission:
-                raise HTTPException(status_code=403, detail=("Permission denied"))
-
-            return current_user
-
-        return permission_checker
-
-    def decode_token(self, token: str):
-        try:
-            payload = jwt.decode(token, self.secret_key, algorithms=[self.algorithm])
-            return payload
-
-        except jwt.ExpiredSignatureError:
+        if not has_role:
             raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expired"
+                status_code=status.HTTP_403_FORBIDDEN, detail=("Permission denied")
             )
 
-        except jwt.InvalidTokenError:
+        return current_user
+
+    return role_checker
+
+
+def has_permissions(allowed_permissions: list[str]):
+    def permission_checker(
+        current_user: User = Depends(get_current_user),
+    ):
+
+        permissions = []
+        for role in current_user.roles:
+            permissions.extend([p.name for p in (role.permissions)])
+
+        has_permission = any(
+            permission in permissions for permission in (allowed_permissions)
+        )
+
+        if not has_permission:
             raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
+                status_code=status.HTTP_403_FORBIDDEN, detail=("Permission denied")
             )
+
+        return current_user
+
+    return permission_checker
+
+
+def decode_token(token: str):
+    try:
+        payload = jwt.decode(token, secret_key, algorithms=[algorithm])
+        return payload
+
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expired"
+        )
+
+    except jwt.InvalidTokenError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
+        )

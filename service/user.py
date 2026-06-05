@@ -20,5 +20,5 @@ class UserService:
         user_crud.delete_user(self.db, user.id)
         return {"message": "User deleted"}
 
-    def get_users(self):
-        return user_crud.get_users(self.db)
+    def get_users(self, page: int = 1, limit: int = 20):
+        return user_crud.get_users(self.db, page=page, limit=limit)
