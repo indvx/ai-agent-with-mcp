@@ -1,8 +1,8 @@
 from mcp.server.fastmcp import FastMCP
 from typing import Optional
-import mysql.connector
 import sys
 from dotenv import load_dotenv
+import mysql.connector
 import os
 
 load_dotenv()
@@ -16,17 +16,27 @@ mcp = FastMCP(
 
 
 def get_conn():
-    try:
-        return mysql.connector.connect(
-            host=os.getenv("MYSQL_HOST"),
-            port=os.getenv("MYSQL_PORT"),
-            user=os.getenv("MYSQL_USER"),
-            password=os.getenv("MYSQL_PASSWORD"),
-            database=os.getenv("MYSQL_DATABASE"),
-        )
-    except mysql.connector.Error as err:
-        print(f"Error: {err}")
-        raise err
+    return mysql.connector.connect(
+        host=os.getenv("MYSQL_HOST"),
+        port=os.getenv("MYSQL_PORT"),
+        user=os.getenv("MYSQL_USER"),
+        password=os.getenv("MYSQL_PASSWORD"),
+        database=os.getenv("MYSQL_DATABASE"),
+    )
+
+
+def success_response(data):
+    return {
+        "success": True,
+        "data": data,
+    }
+
+
+def error_response(message):
+    return {
+        "success": False,
+        "error": message,
+    }
 
 
 @mcp.tool(description="Count records in a table")
@@ -35,20 +45,23 @@ def count_records_table(
     field: Optional[str] = None,
     value: Optional[str] = None,
     desc: bool = False,
-) -> str:
+):
 
     try:
         print(f"Counting records in table {table}")
         print("field", field)
         conn = get_conn()
+        validation = validate_table(table)
+        if validation:
+            return validation
+
         cur = conn.cursor()
         matched_field = None
         if field:
             fields = get_fields(table)
             matched_field = [f for f in fields if field in f["COLUMN_NAME"]]
             if not matched_field:
-                print(f"Field {field} not found in table {table}")
-                return f"Field {field} not found in table {table}"
+                return error_response(f"Field '{field}' not found in table '{table}'")
 
             query = f"""
                 SELECT COUNT(*) FROM {table} WHERE {matched_field[0]['COLUMN_NAME']} like %s
@@ -66,17 +79,15 @@ def count_records_table(
         result = cur.fetchone()
         conn.close()
 
-        if field:
-            print(
-                f"Record successfully counted in {table} with field {field}: {result[0]}"
-            )
-            return f"Count of records in {table} with field {field}: {result[0]}"
-        else:
-            print(f"Record successfully counted in {table}: {result[0]}")
-            return f"Count of records in {table}: {result[0]}"
+        return success_response(
+            {
+                "table": table,
+                "count": result[0],
+            }
+        )
     except Exception as e:
         print(f"Error counting records: {e}")
-        return e
+        return error_response(f"Error counting records: {e}")
 
 
 @mcp.tool(description="List records from a table")
@@ -86,7 +97,7 @@ def list_records(
     value: Optional[str] = None,
     limit: int = 1,
     desc: bool = False,
-) -> list:
+):
     try:
         print("listing_records", "table", table)
         print("field", field)
@@ -94,15 +105,17 @@ def list_records(
         print("limit", limit)
         print("desc", desc)
         conn = get_conn()
+        validation = validate_table(table)
+        if validation:
+            return validation
+
         cur = conn.cursor(dictionary=True)
         matched_field = None
         if field:
             fields = get_fields(table)
             matched_field = [f for f in fields if field in f["COLUMN_NAME"]]
             if not matched_field:
-                print(f"Field {field} not found in table {table}")
-                return f"Field {field} not found in table {table}"
-            print(f"Matched field: {matched_field[0]['COLUMN_NAME']}")
+                return error_response(f"Field '{field}' not found in table '{table}'")
             query = (
                 f"SELECT * FROM {table} WHERE {matched_field[0]['COLUMN_NAME']} like %s"
             )
@@ -125,14 +138,14 @@ def list_records(
 
         conn.close()
         print(f"Listing records {len(rows)} from table {table} successfully")
-        return rows
+        return success_response(rows)
     except Exception as e:
         print(f"Error listing records: {e}")
-        return e
+        return error_response(f"Error listing records: {e}")
 
 
 @mcp.tool(description="Count all tables in the database")
-def count_all_tables() -> str:
+def count_all_tables():
     print("Getting tables")
     conn = get_conn()
     cur = conn.cursor()
@@ -149,12 +162,11 @@ def count_all_tables() -> str:
     tables = [row[0] for row in cur.fetchall()]
 
     conn.close()
-    print(f"Getting {len(tables)} tables successfully")
-    return f"Count of tables in the database: {len(tables)}"
+    return success_response(tables)
 
 
 @mcp.tool(description="Get table names")
-def get_table_names() -> list:
+def get_table_names():
     try:
         print("Getting tables")
         conn = get_conn()
@@ -172,19 +184,20 @@ def get_table_names() -> list:
         tables = [row[0] for row in cur.fetchall()]
 
         conn.close()
-        print(tables)
-        print(f"Getting {len(tables)} tables successfully")
-        return tables
+        return success_response(tables)
     except Exception as e:
         print(f"Error getting tables: {e}")
-        return e
+        return error_response(f"Error getting tables: {e}")
 
 
 @mcp.tool(description="Get fields of a table")
-def get_fields(table: str) -> list:
+def get_fields(table: str):
     try:
         print(f"Gettting fields of the {table} table")
         conn = get_conn()
+        validation = validate_table(table)
+        if validation:
+            return validation
         cur = conn.cursor(dictionary=True)
 
         cur.execute(
@@ -205,18 +218,21 @@ def get_fields(table: str) -> list:
 
         conn.close()
 
-        print(f"Getting fields of the {table} table successfully")
-        return fields
+        return success_response(fields)
     except Exception as e:
         print(f"Error getting fields: {e}")
-        return e
+        return error_response(f"Error getting fields: {e}")
 
 
 @mcp.tool(description="Count fields of a table")
-def count_fields(table: str, field: str, value: str) -> str:
+def count_fields(table: str):
     try:
         print(f"Counting fields of the {table} table")
         conn = get_conn()
+        validation = validate_table(table)
+        if validation:
+            return validation
+
         cur = conn.cursor(dictionary=True)
 
         cur.execute(
@@ -235,13 +251,47 @@ def count_fields(table: str, field: str, value: str) -> str:
 
         fields = cur.fetchall()
 
+        cur.close()
         conn.close()
 
-        print(f"Counting fields of the {table} table successfully")
-        return f"{len(fields)} fields in the {table} table, {field} field has {value} value"
+        return success_response(
+            {
+                "table": table,
+                "count": len(fields),
+            }
+        )
+
     except Exception as e:
         print(f"Error counting fields: {e}")
-        return e
+        return error_response(str(e))
+
+
+def table_exists(table: str) -> bool:
+    conn = get_conn()
+    cur = conn.cursor()
+
+    try:
+        cur.execute(
+            "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = %s AND LOWER(table_name) = LOWER(%s)",
+            (os.getenv("MYSQL_DATABASE"), table),
+        )
+
+        return cur.fetchone()[0] > 0
+
+    finally:
+        cur.close()
+
+
+def validate_table(table: str):
+    if table_exists(table):
+        return None
+
+    tables = get_table_names()
+
+    return error_response(
+        f"Table '{table}' does not exist.",
+        available_tables=tables,
+    )
 
 
 if __name__ == "__main__":

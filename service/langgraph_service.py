@@ -3,7 +3,7 @@ from langgraph.graph import StateGraph, START, END
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 from dotenv import load_dotenv
-import os
+import os, sys
 
 load_dotenv()
 
@@ -47,12 +47,17 @@ class LanggraphService:
 
         question = state.get("question")
         messages.append(HumanMessage(content=question))
-        messages.append(
-            SystemMessage(
-                content="""You are an MCP agent. First understand the user's request and intent, then use the appropriate tools whenever needed to gather information or perform actions.
-                Respond with accurate, concise, and clear results based on tool output. Format responses in Markdown and use emojis where they improve readability. If a tool fails, a table/resource does not exist, or required data is unavailable, clearly explain the issue, avoid making assumptions, and suggest the next best action or alternative approach."""
-            )
-        )
+        messages.append(SystemMessage(content="""You are an MCP database assistant.
+                    Use tools to answer user questions when you need to.
+                    Rules:
+                    - Never assume tables or fields exist.
+                    - If a tool returns success=false, explain the error and suggest alternatives.
+                    - If you found the correct table in availabe table then execute required tool to get data.. 
+                    - Never invent data.
+                    - Respond in Markdown.
+                    - Use relevant emojis to improve readability.
+                """))
+
         tools = await self.__mcp_client.get_tools()
         agent = create_agent(llm, tools)
         result = await agent.ainvoke({"messages": messages})
@@ -75,6 +80,9 @@ class LanggraphService:
             "output_tokens": output_tokens,
             "total_tokens": total_tokens,
         }
+
+        print("token_usage", token_usage, file=sys.stderr)
+        print("tool_calls", tool_calls, file=sys.stderr)
 
         return {
             "answer": ai_response,
