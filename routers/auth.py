@@ -11,7 +11,7 @@ from schemas.auth import (
     MessageResponse,
 )
 from service.auth import AuthService
-from core.security import SecurityHandler
+from core.security import get_current_user
 from sql.models.users import User
 from schemas.users import UserResponse
 
@@ -42,7 +42,7 @@ def refresh_token(payload: RefreshTokenRequest, db: Session = Depends(get_db)):
 
 @router.post("/logout", response_model=MessageResponse)
 def logout(
-    current_user: User = Depends(SecurityHandler().get_current_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     auth_service = AuthService(db)
@@ -51,7 +51,7 @@ def logout(
 
 @router.get("/me", response_model=UserResponse)
 def me(
-    current_user: User = Depends(SecurityHandler().get_current_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     return current_user

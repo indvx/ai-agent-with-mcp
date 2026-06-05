@@ -32,10 +32,11 @@ def success_response(data):
     }
 
 
-def error_response(message):
+def error_response(message, **kwargs):
     return {
         "success": False,
         "error": message,
+        **kwargs,
     }
 
 

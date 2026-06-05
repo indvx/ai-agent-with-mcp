@@ -4,7 +4,7 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 from service.langgraph_service import LanggraphService
 from schemas.chat import Chat
-from core.security import SecurityHandler
+from core.security import has_permissions
 
 router = APIRouter(
     prefix="/chat",
@@ -28,7 +28,7 @@ async def generate_stream_data(query: str):
         yield f"\n[Error: {e}]"
 
 
-@router.post("/", dependencies=[Depends(SecurityHandler().has_permissions(["chat:use"]))])
+@router.post("/", dependencies=[Depends(has_permissions(["chat:use"]))])
 @limiter.limit("5/minute")
 async def chat(query: Chat, request: Request):
     await service.initialize()
@@ -40,6 +40,7 @@ async def chat(query: Chat, request: Request):
         }
     )
     return response
+
 
 @router.post("/stream")
 @limiter.limit("5/minute")

@@ -43,8 +43,23 @@ def create_user(
 
 
 def get_users(db: Session, page: int = 1, limit: int = 100):
-    skip = (page - 1) * limit
-    return db.query(user_model.User).offset(skip).limit(limit).all()
+
+    query = db.query(user_model.User)
+
+    total_items = query.count()
+
+    if page and page > 0:
+        skip = (page - 1) * limit
+        query = query.offset(skip).limit(limit)
+
+    users = query.all()
+    meta = {
+        "limit": limit,
+        "page": page,
+        "total_items": total_items,
+        "current_items": len(users),
+    }
+    return {"users": users, "meta": meta}
 
 
 def delete_user(db: Session, user_id: int) -> bool:

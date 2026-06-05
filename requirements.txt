@@ -10,3 +10,5 @@ pyjwt == 2.13.0
 pwdlib[argon2] == 0.3.0
 SQLAlchemy == 2.0.50
 PyMySQL == 1.2.0
+pytest == 9.0.3
+httpx2 == 2.3.0

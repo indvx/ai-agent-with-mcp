@@ -48,7 +48,7 @@ class LanggraphService:
         question = state.get("question")
         messages.append(HumanMessage(content=question))
         messages.append(SystemMessage(content="""You are an MCP database assistant.
-                    Use tools to answer user questions when you need to.
+                    Use tools to answer user questions.
                     Rules:
                     - Never assume tables or fields exist.
                     - If a tool returns success=false, explain the error and suggest alternatives.
