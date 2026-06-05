@@ -9,5 +9,5 @@ class UserResponse(BaseModel):
     is_active: bool
     created_at: Any
     updated_at: Any
-    class Config:
+    class ConfigDict:
         from_attributes = True

@@ -40,3 +40,17 @@ def create_user(
     db.refresh(user)
 
     return user
+
+
+def get_users(db: Session, page: int = 1, limit: int = 100):
+    skip = (page - 1) * limit
+    return db.query(user_model.User).offset(skip).limit(limit).all()
+
+
+def delete_user(db: Session, user_id: int) -> bool:
+    user = get_user_by_id(db, user_id)
+    if user:
+        db.delete(user)
+        db.commit()
+        return True
+    return False

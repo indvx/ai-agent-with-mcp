@@ -6,7 +6,7 @@ class PermissionResponse(BaseModel):
     id: int
     name: str
 
-    class Config:
+    class ConfigDict:
         from_attributes = True
 
 
@@ -17,5 +17,5 @@ class RoleResponse(BaseModel):
 
     permissions: List[PermissionResponse] = []
 
-    class Config:
+    class ConfigDict:
         from_attributes = True

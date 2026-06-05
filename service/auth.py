@@ -9,18 +9,20 @@ import jwt
 import uuid
 import os
 from schemas.auth import RegisterRequest, LoginRequest
-from service.base_service import BaseService
 
 
-class AuthService(BaseService):
-    def __init__(self):
-        super().__init__()
+class AuthService:
+    def __init__(self, db):
+        self.db = db
         self._secret_key = os.getenv("SECRET_KEY")
         self._algorithm = os.getenv("ALGORITHM", "HS256")
         self._access_token_expire_minutes = int(
             os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 15)
         )
         self._refresh_token_expire_days = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", 7))
+
+    def __db_close(self):
+        self.db.close()
 
     def register(self, payload: RegisterRequest):
         existing_user = user_crud.get_user(self.db, payload.email)

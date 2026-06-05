@@ -25,13 +25,12 @@ class JWTBearer(HTTPBearer):
 
 class SecurityHandler:
     def __init__(self):
+        self.db = next(get_db())
         self.secret_key = os.getenv("SECRET_KEY")
         self.algorithm = os.getenv("ALGORITHM", "HS256")
-        self._user_service = UserService()
+        self._user_service = UserService(self.db)
 
-    def get_current_user(
-        self, token: str = Depends(JWTBearer()), db: Session = Depends(get_db)
-    ):
+    def get_current_user(self, token: str = Depends(JWTBearer())):
 
         payload = self.decode_token(token)
         user_id = payload.get("sub")

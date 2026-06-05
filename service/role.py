@@ -1,10 +1,12 @@
 from sql.crud import role as role_crud
-from service.base_service import BaseService
 
 
-class RoleService(BaseService):
-    def __init__(self):
-        super().__init__()
+class RoleService:
+    def __init__(self, db):
+        self.db = db
+
+    def __db_close(self):
+        self.db.close()
 
     def get_roles(self):
         return role_crud.get_roles(self.db)

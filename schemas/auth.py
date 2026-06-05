@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field, validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
 class RegisterRequest(BaseModel):
@@ -6,23 +6,23 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=16)
     password_confirmation: str = Field(min_length=8)
-    
-    @validator('password')
+
+    @field_validator("password")
     def password_complexity(cls, v):
         if not any(c.isupper() for c in v):
-            raise ValueError('Password must contain at least one uppercase letter')
+            raise ValueError("Password must contain at least one uppercase letter")
         if not any(c.islower() for c in v):
-            raise ValueError('Password must contain at least one lowercase letter')
+            raise ValueError("Password must contain at least one lowercase letter")
         if not any(c.isdigit() for c in v):
-            raise ValueError('Password must contain at least one digit')
-        if not any(c in '!@#$%^&*()' for c in v):
-            raise ValueError('Password must contain at least one special character')
+            raise ValueError("Password must contain at least one digit")
+        if not any(c in "!@#$%^&*()" for c in v):
+            raise ValueError("Password must contain at least one special character")
         return v
-    
-    @validator('password_confirmation')
+
+    @field_validator("password_confirmation")
     def password_match(cls, v, values):
-        if 'password' in values and v != values['password']:
-            raise ValueError('Passwords do not match')
+        if "password" in values and v != values["password"]:
+            raise ValueError("Passwords do not match")
         return v
 
 
@@ -33,3 +33,18 @@ class LoginRequest(BaseModel):
 
 class RefreshTokenRequest(BaseModel):
     refresh_token: str
+
+
+class LoginResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+
+
+class RefreshTokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+
+class MessageResponse(BaseModel):
+    message: str

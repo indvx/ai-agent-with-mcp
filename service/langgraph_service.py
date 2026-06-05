@@ -1,7 +1,7 @@
 from typing import TypedDict, Optional, Any
 from langgraph.graph import StateGraph, START, END
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage, AIMessage, AnyMessage, SystemMessage
+from langchain_core.messages import HumanMessage
 from dotenv import load_dotenv
 import os
 
@@ -10,8 +10,6 @@ load_dotenv()
 
 from langchain.agents import create_agent
 from langchain_mcp_adapters.client import MultiServerMCPClient
-from langchain_core.callbacks import UsageMetadataCallbackHandler
-from langchain_core.runnables import RunnableConfig
 
 
 class MainState(TypedDict):
@@ -31,7 +29,6 @@ class LanggraphService:
         self.__graph = None
         self.__mcp_client = None
         self.__mcp_url = os.getenv("MCP_URL", "http://localhost:8001/mcp")
-        self.callback = UsageMetadataCallbackHandler()
 
     async def initialize(self):
         self.__mcp_client = MultiServerMCPClient(
@@ -45,7 +42,7 @@ class LanggraphService:
         return self.__mcp_client
 
     async def ask_question(
-        self, state: MainState, config: Optional[RunnableConfig] = None
+        self, state: MainState
     ):
         question = state.get("question")
         messages = []
@@ -54,18 +51,7 @@ class LanggraphService:
         tools = await self.__mcp_client.get_tools()
         agent = create_agent(llm, tools)
 
-        run_config = dict(config or {})
-        callbacks = run_config.get("callbacks")
-        if callbacks is None:
-            run_config["callbacks"] = [self.callback]
-        elif isinstance(callbacks, list):
-            if self.callback not in callbacks:
-                run_config["callbacks"] = list(callbacks) + [self.callback]
-        else:
-            if hasattr(callbacks, "add_handler"):
-                callbacks.add_handler(self.callback)
-
-        result = await agent.ainvoke({"messages": messages}, config=run_config)
+        result = await agent.ainvoke({"messages": messages})
 
         ai_response = result["messages"][-1].content
         tool_calls = []
@@ -74,10 +60,24 @@ class LanggraphService:
                 for tool_call in message.tool_calls:
                     tool_calls.append(tool_call)
 
-        print("Token_Usage:", self.callback.usage_metadata)
+        input_tokens = 0
+        output_tokens = 0
+        total_tokens = 0
+        for message in result["messages"]:
+            if hasattr(message, "usage_metadata") and message.usage_metadata:
+                input_tokens += message.usage_metadata.get("input_tokens", 0)
+                output_tokens += message.usage_metadata.get("output_tokens", 0)
+                total_tokens += message.usage_metadata.get("total_tokens", 0)
+        
+        token_usage = {
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": total_tokens
+        }
+        
         return {
             "answer": ai_response,
-            "token_usage": self.callback.usage_metadata,
+            "token_usage": token_usage,
             "tool_calls": tool_calls,
         }
 
