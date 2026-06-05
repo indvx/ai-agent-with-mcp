@@ -1,7 +1,7 @@
 from typing import TypedDict, Optional, Any
 from langgraph.graph import StateGraph, START, END
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage, AIMessage, AnyMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from dotenv import load_dotenv
 import os, sys
 
@@ -44,15 +44,24 @@ class LanggraphService:
     async def ask_question(self, state: MainState):
         messages = []
         tool_calls = []
-        token_usage = {}
 
         question = state.get("question")
         messages.append(HumanMessage(content=question))
+        messages.append(SystemMessage(content="""You are an MCP database assistant.
+                    Use tools to answer user questions when you need to.
+                    Rules:
+                    - Never assume tables or fields exist.
+                    - If a tool returns success=false, explain the error and suggest alternatives.
+                    - If you found the correct table in availabe table then execute required tool to get data.. 
+                    - Never invent data.
+                    - Respond in Markdown.
+                    - Use relevant emojis to improve readability.
+                """))
+
         tools = await self.__mcp_client.get_tools()
         agent = create_agent(llm, tools)
         result = await agent.ainvoke({"messages": messages})
         ai_response = result["messages"][-1].content
-
         input_tokens = 0
         output_tokens = 0
         total_tokens = 0
@@ -61,7 +70,6 @@ class LanggraphService:
                 if hasattr(message, "tool_calls") and message.tool_calls:
                     for tool_call in message.tool_calls:
                         tool_calls.append(tool_call)
-
                 if hasattr(message, "usage_metadata") and message.usage_metadata:
                     input_tokens += message.usage_metadata.get("input_tokens", 0)
                     output_tokens += message.usage_metadata.get("output_tokens", 0)
@@ -72,6 +80,10 @@ class LanggraphService:
             "output_tokens": output_tokens,
             "total_tokens": total_tokens,
         }
+
+        print("token_usage", token_usage, file=sys.stderr)
+        print("tool_calls", tool_calls, file=sys.stderr)
+
         return {
             "answer": ai_response,
             "token_usage": token_usage,
