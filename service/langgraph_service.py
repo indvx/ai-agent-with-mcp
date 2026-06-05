@@ -41,40 +41,35 @@ class LanggraphService:
         )
         return self.__mcp_client
 
-    async def ask_question(
-        self, state: MainState
-    ):
-        question = state.get("question")
+    async def ask_question(self, state: MainState):
         messages = []
-        messages.append(HumanMessage(content=question))
+        tool_calls = []
 
+        question = state.get("question")
+        messages.append(HumanMessage(content=question))
         tools = await self.__mcp_client.get_tools()
         agent = create_agent(llm, tools)
-
         result = await agent.ainvoke({"messages": messages})
-
         ai_response = result["messages"][-1].content
-        tool_calls = []
-        for message in result["messages"]:
-            if hasattr(message, "tool_calls") and message.tool_calls:
-                for tool_call in message.tool_calls:
-                    tool_calls.append(tool_call)
-
         input_tokens = 0
         output_tokens = 0
         total_tokens = 0
-        for message in result["messages"]:
-            if hasattr(message, "usage_metadata") and message.usage_metadata:
-                input_tokens += message.usage_metadata.get("input_tokens", 0)
-                output_tokens += message.usage_metadata.get("output_tokens", 0)
-                total_tokens += message.usage_metadata.get("total_tokens", 0)
-        
+        if isinstance(result, dict) and "messages" in result:
+            for message in result["messages"]:
+                if hasattr(message, "tool_calls") and message.tool_calls:
+                    for tool_call in message.tool_calls:
+                        tool_calls.append(tool_call)
+                if hasattr(message, "usage_metadata") and message.usage_metadata:
+                    input_tokens += message.usage_metadata.get("input_tokens", 0)
+                    output_tokens += message.usage_metadata.get("output_tokens", 0)
+                    total_tokens += message.usage_metadata.get("total_tokens", 0)
+
         token_usage = {
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
-            "total_tokens": total_tokens
+            "total_tokens": total_tokens,
         }
-        
+
         return {
             "answer": ai_response,
             "token_usage": token_usage,
