@@ -7,7 +7,7 @@ client = TestClient(app)
 def test_read_main():
     response = client.get("/")
     assert response.status_code == 200
-    assert response.json() == {"message": "Welecome to mcp chat"}
+    assert response.json() == {"message": "Welcome to mcp chat"}
 
 
 def test_health_check():

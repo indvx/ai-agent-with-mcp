@@ -14,7 +14,7 @@ router = APIRouter(
 )
 
 
-@router.get("/", dependencies=[Depends(has_permissions(["role:manage"]))])
+@router.get("/", dependencies=[Depends(has_permissions(["user:read"]))])
 def get_roles(db: Session = Depends(get_db)):
     role_service = RoleService(db)
     return role_service.get_roles()

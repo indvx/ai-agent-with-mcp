@@ -36,7 +36,7 @@ async def swagger_ui_html(req: Request) -> HTMLResponse:
 
 @app.get("/")
 async def root():
-    return {"message": "Welecome to mcp chat"}
+    return {"message": "Welcome to mcp chat"}
 
 
 @app.get("/health")
