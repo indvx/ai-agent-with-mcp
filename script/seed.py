@@ -1,8 +1,8 @@
 from database import SessionLocal
-from sql.model.role import Role
-from sql.model.permission import Permission
-from sql.model.users import User
-from core.security import hash_password
+from sql.models.role import Role
+from sql.models.permission import Permission
+from sql.models.users import User
+from sql.crud.users import get_password_hash
 
 db = SessionLocal()
 
@@ -41,7 +41,7 @@ def seed_roles():
         role = db.query(Role).filter(Role.name == role_name).first()
 
         if not role:
-            role = Role(name=role_name)
+            role = Role(name=role_name, is_default=(role_name == "user"))
             db.add(role)
     db.commit()
 
@@ -73,7 +73,7 @@ def create_admin():
     admin = User(
         full_name="Admin",
         email="admin@test.com",
-        password_hash=(hash_password("Admin@123")),
+        password_hash=(get_password_hash("Admin@123")),
         is_active=True,
         is_verified=True,
     )
