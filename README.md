@@ -16,6 +16,7 @@ This project implements a production-ready AI agent system that combines:
 ## Features
 
 - 🤖 **AI Agent**: Intelligent agent powered by GPT models with MCP tool integration.
+- 🧠 **Conversation Memory**: State persistence across interactions using LangGraph `MemorySaver` (thread-based tracking).
 - 🔄 **LangGraph Pipeline**: State-based workflow for multi-turn agent conversations.
 - 🛠️ **MCP Integration**: Standardized tool protocol for database operation execution.
 - 🚀 **FastAPI Server**: Modern REST API with automatic documentation.
@@ -62,7 +63,8 @@ Database Layer (SQLAlchemy ORM)
 
 LanggraphService (AI Agent)
     ├── MCP Client (connects to external MCP server for tools)
-    ├── MainState (question, answer, token_usage, tool_calls)
+    ├── MainState (question, answer, token_usage, tool_calls, messages)
+    ├── MemorySaver (persists conversation state per thread_id)
     ├── LangGraph Pipeline
     │   └── chat node (processes queries with LLM)
     └── Token Usage Tracking (tracks OpenAI consumption)
@@ -151,6 +153,16 @@ LanggraphService (AI Agent)
    python -m script.seed
    ```
 
+## MCP Database Tools
+
+The MCP server provides standard interfaces for the AI agent to query and explore the database safely:
+- `count_records_table`: Count records with optional filtering.
+- `list_records`: List records with pagination, sorting, and filtering.
+- `count_all_tables`: Get the total number of tables in the database.
+- `get_table_names`: List all tables available in the schema.
+- `get_fields`: Get column definitions (name, type, nullability) for a table.
+- `count_fields`: Count the total number of columns in a table.
+
 ## Project Structure
 
 ```
@@ -220,6 +232,15 @@ uvicorn main:app --reload
 # Alternative docs: http://localhost:8000/redoc (ReDoc)
 ```
 
+### Running the MCP Server
+
+```bash
+# Start the FastMCP server for database tools
+python -m mcp.server
+
+# MCP Server runs on http://localhost:8001 (based on .env config)
+```
+
 ### API Examples
 
 **Welcome Message:**
@@ -252,10 +273,11 @@ curl http://localhost:8000/
 3. Rate limiter: 5 requests per minute per IP.
 4. LanggraphService initializes MCP client for tools.
 5. LangGraph pipeline processes question:
-   - MainState created with user query.
+   - State retrieved via `MemorySaver` using `thread_id`.
+   - MainState created/updated with user query.
    - ask_question node invokes OpenAI LLM with MCP tools.
    - Tools are executed (database operations).
-   - LLM synthesizes response.
+   - LLM synthesizes response and updated state is saved.
 6. Token usage and tool calls are tracked and returned.
 
 ## Database Schema
