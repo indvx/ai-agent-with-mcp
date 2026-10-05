@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.staticfiles import StaticFiles
@@ -10,6 +11,14 @@ app = FastAPI(
     version="1.0.0",
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 app.include_router(chat.router)
 app.include_router(auth.router)
@@ -17,6 +26,8 @@ app.include_router(role.router)
 app.include_router(user.router)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
 @app.get("/docs", include_in_schema=False)
 async def swagger_ui_html(req: Request) -> HTMLResponse:
     root_path = req.scope.get("root_path", "").rstrip("/")
@@ -24,7 +35,9 @@ async def swagger_ui_html(req: Request) -> HTMLResponse:
     oauth2_redirect_url = app.swagger_ui_oauth2_redirect_url
     if oauth2_redirect_url:
         oauth2_redirect_url = root_path + oauth2_redirect_url
-    swagger_favicon_url = f"{root_path}/static/logo.svg" if root_path else "/static/logo.svg"
+    swagger_favicon_url = (
+        f"{root_path}/static/logo.svg" if root_path else "/static/logo.svg"
+    )
     return get_swagger_ui_html(
         openapi_url=openapi_url,
         title=app.title + " - Swagger UI",
@@ -33,6 +46,7 @@ async def swagger_ui_html(req: Request) -> HTMLResponse:
         swagger_favicon_url=swagger_favicon_url,
         swagger_ui_parameters=app.swagger_ui_parameters,
     )
+
 
 @app.get("/")
 async def root():
