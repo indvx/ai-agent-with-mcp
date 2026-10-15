@@ -1,10 +1,4 @@
-"""inintial
-
-Revision ID: de837bdd390e
-Revises: b48cf5dd38a6
-Create Date: 2026-06-06 14:06:02.300967
-
-"""
+"""inintial Revision ID: de837bdd390e Revises: b48cf5dd38a6 Create Date: 2026-06-06 14:06:02.300967"""
 from typing import Sequence, Union
 
 from alembic import op
