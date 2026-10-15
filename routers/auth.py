@@ -24,18 +24,21 @@ router = APIRouter(
 
 @router.post("/register", status_code=201, response_model=MessageResponse)
 def register(payload: RegisterRequest, db: Session = Depends(get_db)):
+    """Create a user account."""
     auth_service = AuthService(db)
     return auth_service.register(payload=payload)
 
 
 @router.post("/login", response_model=LoginResponse)
 def login(payload: LoginRequest, db: Session = Depends(get_db)):
+    """Check credentials and return the login tokens."""
     auth_service = AuthService(db)
     return auth_service.login(payload=payload)
 
 
 @router.post("/refresh", response_model=RefreshTokenResponse)
 def refresh_token(payload: RefreshTokenRequest, db: Session = Depends(get_db)):
+    """Issue a new access token from a valid refresh token."""
     auth_service = AuthService(db)
     return auth_service.refresh_token(refresh_token=payload.refresh_token)
 
@@ -45,6 +48,7 @@ def logout(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    """Revoke the current user's refresh token."""
     auth_service = AuthService(db)
     return auth_service.logout(user_id=current_user.id)
 
@@ -54,4 +58,5 @@ def me(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    """Return the account attached to the current access token."""
     return current_user
