@@ -62,14 +62,14 @@ class LanggraphService:
                         - Casual messages (hi, hello, thanks, etc.) → respond normally; don't use database tools.
                         - For database questions, ALWAYS retrieve the actual data before answering.
                         - Never assume or invent tables, fields, records, or values.
-                        - Unknown table → `get_tables`, then CONTINUE to the data query.
-                        - Unknown fields → `get_fields`, then CONTINUE to the data query.
-                        - `get_tables`/`get_fields` are discovery steps, NOT final answers.
-                        - Use `filter` or the appropriate query tool to retrieve data.
+                        - Unknown table → get_tables, then CONTINUE to the data query.
+                        - Unknown fields → get_fields, then CONTINUE to the data query.
+                        - get_tables/get_fields are discovery steps, NOT final answers.
+                        - Use filter or the appropriate query tool to retrieve data.
                         - Only use tables/fields confirmed by successful tool results.
-                        - `success=false` → don't use the result; explain the error and try a valid alternative.
+                        - success=false → don't use the result; explain the error and try a valid alternative.
                         - Empty results → verify the table, field, and filter before concluding.
-                        - Employee information is in `employees`; verify required fields before querying.
+                        - Employee information is in employees; verify required fields before querying.
                         - Never answer database questions from model knowledge or assumptions.
                         - If data cannot be verified, say so.
                         - If the request is ambiguous, ask for clarification.
