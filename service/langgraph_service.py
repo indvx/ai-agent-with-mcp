@@ -1,15 +1,26 @@
-from typing import TypedDict, Optional, Any
-from langgraph.graph import StateGraph, START, END
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage, SystemMessage
+import asyncio
+import logging
+import os
+from typing import Any, Optional, TypedDict
+
 from dotenv import load_dotenv
-import os, sys
+from langchain.agents import create_agent
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_openai import ChatOpenAI
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from langgraph.graph import END, START, StateGraph
 
 load_dotenv()
 
+logger = logging.getLogger(__name__)
 
-from langchain.agents import create_agent
-from langchain_mcp_adapters.client import MultiServerMCPClient
+SYSTEM_PROMPT = """You are a database assistant using MCP tools.
+For database questions, use tool results; never invent tables, columns, or records.
+Use only schema details confirmed by successful tool results. Discover tables or
+columns when needed, then continue to retrieve the requested data. Check tool
+success and verify results before answering. If results are empty, validate the
+table, fields, and filters before concluding. Ask for clarification when needed.
+Return a concise, relevant answer in Markdown. Do not expose sensitive fields."""
 
 
 class MainState(TypedDict):
@@ -20,7 +31,8 @@ class MainState(TypedDict):
 
 
 llm = ChatOpenAI(
-    model=os.getenv("OPENAI_MODEL", "gpt-3.5-turbo"), temperature=0, verbose=True
+    model=os.getenv("OPENAI_MODEL", "gpt-3.5-turbo"),
+    temperature=0,
 )
 
 
@@ -28,84 +40,90 @@ class LanggraphService:
     def __init__(self):
         self.__graph = None
         self.__mcp_client = None
+        self.__tools = None
+        self.__agent = None
         self.__mcp_url = os.getenv("MCP_URL", "http://localhost:8001/mcp")
+        self.__initialize_lock = asyncio.Lock()
 
     async def initialize(self):
-        try:
-            self.__mcp_client = MultiServerMCPClient(
-                {
-                    "db_operation": {
-                        "transport": "streamable_http",
-                        "url": self.__mcp_url,
-                    }
-                }
-            )
+        """Initialize the MCP client and agent once per service instance."""
+        if self.__agent is not None:
             return self.__mcp_client
-        except Exception as e:
-            print(f"Error initializing MCP client: {e}", file=sys.stderr)
-            raise e
+
+        async with self.__initialize_lock:
+            if self.__agent is not None:
+                return self.__mcp_client
+
+            try:
+                client = MultiServerMCPClient(
+                    {
+                        "db_operation": {
+                            "transport": "streamable_http",
+                            "url": self.__mcp_url,
+                        }
+                    }
+                )
+                tools = await client.get_tools()
+                agent = create_agent(llm, tools)
+
+                self.__mcp_client = client
+                self.__tools = tools
+                self.__agent = agent
+                logger.info("MCP agent initialized with %d tools", len(tools))
+                return self.__mcp_client
+            except Exception:
+                logger.exception("Error initializing MCP client and agent")
+                raise
 
     async def ask_question(self, state: MainState):
-        messages = []
+        await self.initialize()
+        question = state.get("question") or ""
+
+        # Keep the static system instructions first to preserve a stable prompt prefix.
+        messages = [
+            SystemMessage(content=SYSTEM_PROMPT),
+            HumanMessage(content=question),
+        ]
+
+        result = await self.__agent.ainvoke({"messages": messages})
+        result_messages = result.get("messages", [])
+        ai_response = result_messages[-1].content if result_messages else ""
+
         tool_calls = []
-
-        question = state.get("question")
-        messages.append(HumanMessage(content=question))
-        messages.append(
-            SystemMessage(
-                content="""You are an MCP database assistant. Answer database questions ONLY using data retrieved through MCP tools.
-                    Rules:
-                        - Casual messages (hi, hello, thanks, etc.) → respond normally; don't use database tools.
-                        - For database questions, ALWAYS retrieve the actual data before answering.
-                        - Never assume or invent tables, fields, records, or values.
-                        - Unknown table → `get_tables`, then CONTINUE to the data query.
-                        - Unknown fields → `get_fields`, then CONTINUE to the data query.
-                        - `get_tables`/`get_fields` are discovery steps, NOT final answers.
-                        - Use `filter` or the appropriate query tool to retrieve data.
-                        - Only use tables/fields confirmed by successful tool results.
-                        - `success=false` → don't use the result; explain the error and try a valid alternative.
-                        - Empty results → verify the table, field, and filter before concluding.
-                        - Employee information is in `employees`; verify required fields before querying.
-                        - Never answer database questions from model knowledge or assumptions.
-                        - If data cannot be verified, say so.
-                        - If the request is ambiguous, ask for clarification.
-                        - Respond in Markdown with relevant emojis.
-
-                    Before answering, verify:
-                    1. Correct table
-                    2. Correct fields
-                    3. Successful query
-                    4. Returned data matches the question
-                    5. No invented information
-                """
-            )
-        )
-
-        tools = await self.__mcp_client.get_tools()
-        agent = create_agent(llm, tools)
-        result = await agent.ainvoke({"messages": messages})
-        ai_response = result["messages"][-1].content
+        model_calls = []
         input_tokens = 0
         output_tokens = 0
         total_tokens = 0
-        if isinstance(result, dict) and "messages" in result:
-            for message in result["messages"]:
-                if hasattr(message, "tool_calls") and message.tool_calls:
-                    for tool_call in message.tool_calls:
-                        tool_calls.append(tool_call)
-                if hasattr(message, "usage_metadata") and message.usage_metadata:
-                    input_tokens += message.usage_metadata.get("input_tokens", 0)
-                    output_tokens += message.usage_metadata.get("output_tokens", 0)
-                    total_tokens += message.usage_metadata.get("total_tokens", 0)
+
+        for message in result_messages:
+            message_tool_calls = getattr(message, "tool_calls", None)
+            if message_tool_calls:
+                tool_calls.extend(message_tool_calls)
+
+            usage = getattr(message, "usage_metadata", None)
+            if not usage:
+                continue
+
+            call_usage = {
+                "input_tokens": usage.get("input_tokens", 0),
+                "output_tokens": usage.get("output_tokens", 0),
+                "total_tokens": usage.get("total_tokens", 0),
+            }
+            model_calls.append(call_usage)
+            input_tokens += call_usage["input_tokens"]
+            output_tokens += call_usage["output_tokens"]
+            total_tokens += call_usage["total_tokens"]
 
         token_usage = {
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
             "total_tokens": total_tokens,
+            "model_calls": model_calls,
+            "model_call_count": len(model_calls),
         }
 
-        print("token_usage", token_usage, file=sys.stderr)
-        print("tool_calls", tool_calls, file=sys.stderr)
+        logger.info("Token usage for request: %s", token_usage)
+        logger.info("MCP tool call count: %d", len(tool_calls))
 
         return {
             "answer": ai_response,
