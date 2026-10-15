@@ -332,18 +332,9 @@ def get_fields(table: str):
 
 @mcp.tool(
     description=(
-        "List records from a database table. "
-        "Never return more than 20 records in one call. "
-        "If the user asks for one, single, or only one record, "
-        "use limit=1. "
-        "If the user asks for a specific number, use that number "
-        "up to the maximum allowed limit. "
-        "For normal list requests, use limit=20. "
-        "For all/every records, use limit=20 and start with offset=0. "
-        "Continue requesting the next page using next_offset until "
-        "has_more=false. "
-        "Never use limit=1 unless the user explicitly asks for one record. "
-        "Never remove the LIMIT/OFFSET restriction."
+        "List records from a table. Select only fields needed to answer the question. "
+        "Maximum 20 records per call. Use limit=1 only when explicitly requested. "
+        "For all records, paginate with offset/next_offset until has_more is false."
     )
 )
 def list_records(
