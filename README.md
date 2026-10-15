@@ -345,6 +345,18 @@ curl http://localhost:8000/
 ### User Role
 - user:read (Note: By default in `script/seed.py`, `chat:use` is not included in the seeded default role).
 
+## Token Usage Diagnostics
+
+The chat response includes aggregate token usage across the model calls made for that request:
+
+- `input_tokens`, `output_tokens`, and `total_tokens`: totals across model calls.
+- `model_call_count`: number of model calls for which usage metadata was returned.
+- `model_calls`: per-call input, output, and total token counts.
+
+The agent also logs aggregate token usage and the number of MCP tool calls. Compare the same representative questions before and after changes to measure token savings; totals can vary by model, schema, tool calls, and returned data.
+
+The MCP client, tool list, and compiled agent are initialized once per service instance and reused across requests. The system prompt and record-list tool description have been shortened. These changes reduce repeated initialization work and some prompt overhead, but the per-request token reduction must be verified with actual usage data.
+
 ## Rate Limiting
 
 - `/chat/` and `/chat/stream` endpoints: 5 requests per minute per IP address (SlowAPI).
