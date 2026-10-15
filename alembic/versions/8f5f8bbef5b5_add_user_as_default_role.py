@@ -1,10 +1,4 @@
-"""add user as default role
-
-Revision ID: 8f5f8bbef5b5
-Revises: 35b565596bc1
-Create Date: 2026-06-06 14:14:53.132453
-
-"""
+"""add user as default role Revision ID: 8f5f8bbef5b5 Revises: 35b565596bc1 Create Date: 2026-06-06 14:14:53.132453"""
 from typing import Sequence, Union
 
 from alembic import op
