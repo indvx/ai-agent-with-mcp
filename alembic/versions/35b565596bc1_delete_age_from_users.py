@@ -1,10 +1,4 @@
-"""delete age from users
-
-Revision ID: 35b565596bc1
-Revises: de837bdd390e
-Create Date: 2026-06-06 14:06:39.989119
-
-"""
+"""delete age from users Revision ID: 35b565596bc1 Revises: de837bdd390e Create Date: 2026-06-06 14:06:39.989119"""
 from typing import Sequence, Union
 
 from alembic import op
