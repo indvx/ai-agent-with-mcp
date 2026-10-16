@@ -16,6 +16,7 @@ service = LanggraphService()
 
 
 async def generate_stream_data(query: str):
+    """Yield model output as it arrives, so clients don't wait for the full answer."""
     try:
         await service.initialize()
         graph = service.build_pipeline()
@@ -31,6 +32,7 @@ async def generate_stream_data(query: str):
 @router.post("/", dependencies=[Depends(has_permissions(["chat:use"]))])
 @limiter.limit("5/minute")
 async def chat(query: Chat, request: Request):
+    """Run the agent and return its completed response."""
     await service.initialize()
     graph = service.build_pipeline()
 
@@ -45,6 +47,7 @@ async def chat(query: Chat, request: Request):
 @router.post("/stream")
 @limiter.limit("5/minute")
 async def chat_stream(query: Chat, request: Request):
+    """Stream the agent's answer as server-sent events."""
     return StreamingResponse(
         generate_stream_data(query.query),
         media_type="text/event-stream",

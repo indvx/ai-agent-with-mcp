@@ -62,9 +62,7 @@ def error_response(message, **kwargs):
 
 
 def table_exists(table: str) -> bool:
-    """
-    Check whether a table exists in the configured database.
-    """
+    """Check whether a table exists in the configured database."""
 
     conn = get_conn()
     cur = conn.cursor()
@@ -91,10 +89,7 @@ def table_exists(table: str) -> bool:
 
 
 def validate_table(table: str):
-    """
-    Validate table without returning the entire table list.
-    This prevents large MCP responses.
-    """
+    """Validate table without returning the entire table list. This prevents large MCP responses."""
 
     if table_exists(table):
         return None
@@ -103,10 +98,7 @@ def validate_table(table: str):
 
 
 def get_actual_table_name(table: str) -> Optional[str]:
-    """
-    Return the actual table name from MySQL.
-    Useful for case-insensitive table matching.
-    """
+    """Return the actual table name from MySQL. Useful for case-insensitive table matching."""
 
     conn = get_conn()
     cur = conn.cursor()
@@ -136,10 +128,7 @@ def get_actual_table_name(table: str) -> Optional[str]:
 
 
 def get_table_fields_raw(table: str):
-    """
-    Internal helper.
-    Returns normalized field information from MySQL.
-    """
+    """Internal helper. Returns normalized field information from MySQL."""
 
     conn = get_conn()
     cur = conn.cursor(dictionary=True)
@@ -189,9 +178,7 @@ def find_field(
     available_fields: list[dict],
     requested_field: str,
 ) -> Optional[str]:
-    """
-    Find a field case-insensitively.
-    """
+    """Find a field case-insensitively."""
 
     requested_field = requested_field.lower()
 
@@ -215,17 +202,7 @@ def get_table_names(
     search: Optional[str] = None,
     limit: int = MAX_TABLE_LIMIT,
 ):
-    """
-    Find tables in the database.
-
-    Examples:
-
-        get_table_names()
-
-        get_table_names(search="employee")
-
-        get_table_names(search="user")
-    """
+    """Find tables in the database. Examples: get_table_names() get_table_names(search="employee") get_table_names(search="user")"""
 
     try:
         conn = get_conn()
@@ -288,9 +265,7 @@ def get_table_names(
     )
 )
 def get_fields(table: str):
-    """
-    Get columns of a table.
-    """
+    """Get columns of a table."""
 
     try:
         actual_table = get_actual_table_name(table)
@@ -527,9 +502,7 @@ def count_records_table(
     field: Optional[str] = None,
     value: Optional[str] = None,
 ):
-    """
-    Count records in a table.
-    """
+    """Count records in a table."""
 
     try:
         actual_table = get_actual_table_name(table)

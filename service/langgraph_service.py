@@ -25,12 +25,15 @@ llm = ChatOpenAI(
 
 
 class LanggraphService:
+    """Connects the chat flow to MCP tools and runs the agent."""
+
     def __init__(self):
         self.__graph = None
         self.__mcp_client = None
         self.__mcp_url = os.getenv("MCP_URL", "http://localhost:8001/mcp")
 
     async def initialize(self):
+        """Connect to the configured MCP server before running the agent."""
         try:
             self.__mcp_client = MultiServerMCPClient(
                 {
@@ -46,6 +49,7 @@ class LanggraphService:
             raise e
 
     async def ask_question(self, state: MainState):
+        """Ask the agent to answer from database results returned by MCP tools."""
         messages = []
         tool_calls = []
 
@@ -81,6 +85,7 @@ class LanggraphService:
             )
         )
 
+        # Load the tools at runtime so the agent uses the tools exposed by this MCP server.
         tools = await self.__mcp_client.get_tools()
         agent = create_agent(llm, tools)
         result = await agent.ainvoke({"messages": messages})
@@ -114,6 +119,7 @@ class LanggraphService:
         }
 
     def build_pipeline(self):
+        """Build the one-node graph that hands each question to the agent."""
         if self.__graph is not None:
             return self.__graph
 
