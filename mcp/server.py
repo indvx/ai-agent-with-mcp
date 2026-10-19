@@ -2,7 +2,7 @@ import sys
 import os
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Optional
+from typing import Optional, Union
 
 from dotenv import load_dotenv
 import mysql.connector
@@ -394,7 +394,7 @@ def list_records(
     table: str,
     field: Optional[str] = None,
     value: Optional[str] = None,
-    fields: Optional[list[str]] = None,
+    fields: Optional[Union[list[str], str]] = None,
     limit: int = 15,
     offset: int = 0,
     desc: bool = False,
@@ -416,6 +416,10 @@ def list_records(
         ]
 
         if fields:
+
+            # Allow model to pass either a list ["col1", "col2"] or a string "col1" / "col1, col2"
+            if isinstance(fields, str):
+                fields = [f.strip() for f in fields.split(",") if f.strip()]
 
             selected_fields = []
             invalid_fields = []
