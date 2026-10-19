@@ -175,3 +175,31 @@ def test_list_records_excludes_heavy_columns_by_default():
         assert "`resume`" not in called_query
         assert "`avatar_file`" not in called_query
 
+
+def test_list_records_handles_string_and_comma_separated_fields():
+    """Verify list_records accepts string and comma-separated string for fields."""
+    mock_conn = MagicMock()
+    mock_cur = MagicMock()
+    mock_conn.cursor.return_value = mock_cur
+    mock_cur.fetchall.return_value = []
+
+    mock_fields = [
+        {"column_name": "id", "data_type": "int", "is_nullable": "NO", "column_key": "PRI"},
+        {"column_name": "department_id", "data_type": "int", "is_nullable": "YES", "column_key": ""},
+    ]
+
+    with patch.object(mcp_server, "get_actual_table_name", return_value="employees"), \
+         patch.object(mcp_server, "get_table_fields_raw", return_value=mock_fields), \
+         patch.object(mcp_server, "get_conn", return_value=mock_conn):
+
+        # Test single string
+        list_records(table="employees", fields="department_id")
+        q1 = mock_cur.execute.call_args[0][0]
+        assert "SELECT `department_id`" in q1
+
+        # Test comma-separated string
+        list_records(table="employees", fields="id, department_id")
+        q2 = mock_cur.execute.call_args[0][0]
+        assert "`id`" in q2 and "`department_id`" in q2
+
+
