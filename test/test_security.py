@@ -1,3 +1,5 @@
+"""Unit tests for JWT token authentication and user resolution security rules."""
+
 import pytest
 from fastapi import HTTPException
 import jwt
@@ -8,6 +10,7 @@ from sql.crud.users import get_password_hash
 
 
 def test_get_current_user_success(db_session):
+    """Ensure a valid JWT token correctly resolves the corresponding active user."""
     secret_key = os.getenv("SECRET_KEY")
     algorithm = os.getenv("ALGORITHM", "HS256")
 
@@ -29,6 +32,7 @@ def test_get_current_user_success(db_session):
 
 
 def test_get_current_user_inactive_user(db_session):
+    """Ensure inactive or deactivated accounts are rejected with 403 Forbidden."""
     secret_key = os.getenv("SECRET_KEY")
     algorithm = os.getenv("ALGORITHM", "HS256")
 
@@ -51,6 +55,7 @@ def test_get_current_user_inactive_user(db_session):
 
 
 def test_get_current_user_not_found(db_session):
+    """Ensure a valid JWT with an unknown user ID returns 404 Not Found."""
     secret_key = os.getenv("SECRET_KEY")
     algorithm = os.getenv("ALGORITHM", "HS256")
 
@@ -60,3 +65,4 @@ def test_get_current_user_not_found(db_session):
 
     assert exc_info.value.status_code == 404
     assert exc_info.value.detail == "User not found"
+

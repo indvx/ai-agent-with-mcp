@@ -11,6 +11,7 @@ router = APIRouter(
     tags=["chat"],
     responses={404: {"description": "Not found"}},
 )
+# Rate limiter to prevent API abuse (keyed by client IP address)
 limiter = Limiter(key_func=get_remote_address)
 service = LanggraphService()
 

@@ -6,6 +6,7 @@ import os
 
 load_dotenv()
 
+# Build the database connection string from environment variables
 SQLALCHEMY_DATABASE_URL = "{}://{}:{}@{}:{}/{}".format(
     os.getenv("DB_CONNECTION", default="mysql+pymysql"),
     os.getenv("MYSQL_USER", default="root"),
@@ -15,6 +16,7 @@ SQLALCHEMY_DATABASE_URL = "{}://{}:{}@{}:{}/{}".format(
     os.getenv("MYSQL_DATABASE", default="python"),
 )
 
+# pool_pre_ping automatically reconnects if MySQL drops stale connections
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
     pool_size=5,
@@ -22,13 +24,15 @@ engine = create_engine(
     isolation_level="READ COMMITTED",
 )
 
+# Factory for creating new database sessions per request
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 # SessionLocal = scoped_session(SessionLocal)
 Base = declarative_base()
 
 
-# Dependency
+# FastAPI dependency that provides a clean DB session per request and closes it after
 def get_db():
+    """Yields a database session and guarantees closure upon request completion."""
     db = SessionLocal()
     try:
         yield db

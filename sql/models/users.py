@@ -8,6 +8,7 @@ from database import Base
 
 
 class User(Base):
+    """User account entity storing credentials, verification status, and timestamps."""
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -19,5 +20,6 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.now(UTC))
     updated_at = Column(DateTime, default=datetime.now(UTC), onupdate=datetime.now(UTC))
 
+    # Many-to-many relationship with roles via the user_roles bridge table
     roles = relationship("Role", secondary="user_roles", back_populates="users")
     refresh_tokens = relationship("RefreshToken", back_populates="user")

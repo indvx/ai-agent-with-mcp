@@ -6,24 +6,29 @@ password_hash = PasswordHash.recommended()
 
 
 def verify_password(plain_password, hashed_password):
+    """Verifies a plaintext password against an Argon2/bcrypt hash."""
     return password_hash.verify(plain_password, hashed_password)
 
 
 def get_password_hash(password):
+    """Hashes a plaintext password using the recommended algorithm."""
     return password_hash.hash(password)
 
 
 def get_user(db: Session, email: str):
+    """Retrieves a user record matching the given email address."""
     return db.query(user_model.User).filter(user_model.User.email == email).first()
 
 
 def get_user_by_id(db: Session, user_id: int):
+    """Retrieves a user record matching the primary key ID."""
     return db.query(user_model.User).filter(user_model.User.id == user_id).first()
 
 
 def create_user(
     db: Session, data: dict, default_role: role_model.Role = None
 ) -> user_model.User:
+    """Inserts a new user record with hashed password and assigns their default role."""
     user = user_model.User(
         full_name=data.get("full_name", "test"),
     )
@@ -43,7 +48,7 @@ def create_user(
 
 
 def get_users(db: Session, page: int = 1, limit: int = 100):
-
+    """Fetches a paginated slice of user records and metadata."""
     query = db.query(user_model.User)
 
     total_items = query.count()
@@ -63,6 +68,7 @@ def get_users(db: Session, page: int = 1, limit: int = 100):
 
 
 def delete_user(db: Session, user_id: int) -> bool:
+    """Deletes a user record by ID. Returns True if found and deleted, otherwise False."""
     user = get_user_by_id(db, user_id)
     if user:
         db.delete(user)

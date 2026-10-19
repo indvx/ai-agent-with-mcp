@@ -1,3 +1,5 @@
+"""Pytest configuration and shared fixtures for database setup, auth mocks, and test clients."""
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -10,6 +12,7 @@ from core.security import get_current_user, JWTBearer
 from sql.models.role import Role
 from sql.models.permission import Permission
 
+# Dedicated SQLite database for automated test execution
 TEST_DATABASE_URL = "sqlite:///./test.db"
 
 engine = create_engine(TEST_DATABASE_URL, connect_args={"check_same_thread": False})
@@ -17,17 +20,20 @@ TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=Fals
 
 
 class MockPermission:
+    """Mock permission entity for security dependency tests."""
     def __init__(self, name):
         self.name = name
 
 
 class MockRole:
+    """Mock role entity containing associated mock permissions."""
     def __init__(self, name, permissions):
         self.name = name
         self.permissions = [MockPermission(p) for p in permissions]
 
 
 class MockUser:
+    """Mock user entity with full administrator permissions for route testing."""
     def __init__(self):
         self.id = 1
         self.full_name = "Mock Admin"
@@ -52,6 +58,7 @@ class MockUser:
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_db():
+    """Create test schema and seed essential baseline roles and permissions."""
     Base.metadata.create_all(bind=engine)
     # Seed default roles and permissions in test db so registration can find the default role
     db = TestingSessionLocal()
@@ -81,6 +88,7 @@ def setup_db():
 
 @pytest.fixture
 def db_session():
+    """Provide a transactional database session that rolls back after each test."""
     connection = engine.connect()
     transaction = connection.begin()
     session = TestingSessionLocal(bind=connection)
@@ -93,20 +101,24 @@ def db_session():
 
 
 def override_get_current_user():
+    """Dependency override returning a mocked administrator."""
     return MockUser()
 
 
 async def mock_jwt_bearer_call(self, request: Request):
+    """Bypasses HTTP Bearer header token validation during tests."""
     return "mock_token"
 
 
 @pytest.fixture(autouse=True)
 def mock_jwt(monkeypatch):
+    """Globally mock JWTBearer validation across the test suite."""
     monkeypatch.setattr(JWTBearer, "__call__", mock_jwt_bearer_call)
 
 
 @pytest.fixture
 def client(db_session):
+    """FastAPI TestClient with overridden database session and current user dependencies."""
     def _override_get_db():
         try:
             yield db_session
