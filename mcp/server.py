@@ -1,10 +1,13 @@
 import sys
 import os
-from mcp.server.fastmcp import FastMCP
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Optional
 
 from dotenv import load_dotenv
 import mysql.connector
+from mysql.connector.pooling import MySQLConnectionPool
+from mcp.server.fastmcp import FastMCP
 
 
 load_dotenv()
@@ -36,16 +39,44 @@ SENSITIVE_FIELDS = {
     "private_key",
 }
 
+_db_pool: Optional[MySQLConnectionPool] = None
+
+
+def get_pool() -> MySQLConnectionPool:
+    """Lazily initializes and returns the shared MySQL connection pool."""
+    global _db_pool
+    if _db_pool is None:
+        _db_pool = MySQLConnectionPool(
+            pool_name="mcp_pool",
+            pool_size=int(os.getenv("MYSQL_POOL_SIZE", "5")),
+            pool_reset_session=True,
+            host=os.getenv("MYSQL_HOST"),
+            port=int(os.getenv("MYSQL_PORT", "3306")),
+            user=os.getenv("MYSQL_USER"),
+            password=os.getenv("MYSQL_PASSWORD"),
+            database=MYSQL_DATABASE,
+        )
+    return _db_pool
+
 
 def get_conn():
-    """Opens a connection to the configured MySQL database."""
-    return mysql.connector.connect(
-        host=os.getenv("MYSQL_HOST"),
-        port=int(os.getenv("MYSQL_PORT", "3306")),
-        user=os.getenv("MYSQL_USER"),
-        password=os.getenv("MYSQL_PASSWORD"),
-        database=MYSQL_DATABASE,
-    )
+    """Retrieves a connection from the MySQL connection pool."""
+    return get_pool().get_connection()
+
+
+def serialize_row(row: dict) -> dict:
+    """Converts database values into JSON-serializable primitives."""
+    serialized = {}
+    for key, val in row.items():
+        if isinstance(val, (datetime, date)):
+            serialized[key] = val.isoformat()
+        elif isinstance(val, Decimal):
+            serialized[key] = float(val)
+        elif isinstance(val, bytes):
+            serialized[key] = val.decode("utf-8", errors="replace")
+        else:
+            serialized[key] = val
+    return serialized
 
 
 def success_response(data):
@@ -208,10 +239,10 @@ def get_table_names(
 ):
     """Find tables in the database. Examples: get_table_names() get_table_names(search="employee") get_table_names(search="user")"""
 
-    try:
-        conn = get_conn()
-        cur = conn.cursor()
+    conn = get_conn()
+    cur = conn.cursor()
 
+    try:
         limit = min(
             max(limit or 1, 1),
             MAX_TABLE_LIMIT,
@@ -243,9 +274,6 @@ def get_table_names(
 
         tables = [row[0] for row in cur.fetchall()]
 
-        cur.close()
-        conn.close()
-
         return success_response(
             {
                 "count": len(tables),
@@ -260,6 +288,10 @@ def get_table_names(
         )
 
         return error_response(f"Error getting tables: {e}")
+
+    finally:
+        cur.close()
+        conn.close()
 
 
 @mcp.tool(
@@ -332,7 +364,6 @@ def list_records(
     fields: Optional[list[str]] = None,
     limit: int = 20,
     offset: int = 0,
-    get_all: bool = False,
     desc: bool = False,
 ):
     try:
@@ -461,32 +492,35 @@ def list_records(
         params.append(offset)
 
         conn = get_conn()
-        cur = conn.cursor()
+        cur = conn.cursor(dictionary=True)
 
-        cur.execute(query, tuple(params))
+        try:
+            cur.execute(query, tuple(params))
 
-        rows = cur.fetchall()
+            rows = cur.fetchall()
 
-        has_more = len(rows) > limit
+            has_more = len(rows) > limit
 
-        rows = rows[:limit]
+            rows = rows[:limit]
+            serialized_rows = [serialize_row(row) for row in rows]
 
-        next_offset = offset + limit if has_more else None
+            next_offset = offset + limit if has_more else None
 
-        cur.close()
-        conn.close()
+            return success_response(
+                {
+                    "table": actual_table,
+                    "count": len(serialized_rows),
+                    "offset": offset,
+                    "limit": limit,
+                    "has_more": has_more,
+                    "next_offset": next_offset,
+                    "data": serialized_rows,
+                }
+            )
 
-        return success_response(
-            {
-                "table": actual_table,
-                "count": len(rows),
-                "offset": offset,
-                "limit": limit,
-                "has_more": has_more,
-                "next_offset": next_offset,
-                "data": rows,
-            }
-        )
+        finally:
+            cur.close()
+            conn.close()
 
     except Exception as e:
 
@@ -562,22 +596,24 @@ def count_records_table(
         conn = get_conn()
         cur = conn.cursor()
 
-        cur.execute(
-            query,
-            params,
-        )
+        try:
+            cur.execute(
+                query,
+                params,
+            )
 
-        count = cur.fetchone()[0]
+            count = cur.fetchone()[0]
 
-        cur.close()
-        conn.close()
+            return success_response(
+                {
+                    "table": actual_table,
+                    "count": count,
+                }
+            )
 
-        return success_response(
-            {
-                "table": actual_table,
-                "count": count,
-            }
-        )
+        finally:
+            cur.close()
+            conn.close()
 
     except Exception as e:
 
