@@ -6,6 +6,7 @@ from datetime import timezone, datetime
 def get_token_by_jti_or_user_id(
     db: Session, jti: str = None, user_id: int = None, revoked: bool = None
 ) -> refresh_token_model.RefreshToken:
+    """Finds a stored refresh token by unique JTI UUID or user ID."""
     query = db.query(refresh_token_model.RefreshToken)
     if jti:
         query = query.filter(refresh_token_model.RefreshToken.jti == jti)
@@ -26,6 +27,7 @@ def create_or_update_refresh_token(
     expires_at=None,
     revoked: bool = False,
 ) -> refresh_token_model.RefreshToken:
+    """Inserts a new refresh token or rotates an existing active token for a user."""
     refresh_token = get_token_by_jti_or_user_id(db, user_id=user_id)
     if refresh_token:
         if jti != "" or jti is not None:
@@ -53,6 +55,7 @@ def create_or_update_refresh_token(
 
 
 def is_refresh_token_expired(refresh_token: refresh_token_model.RefreshToken) -> bool:
+    """Checks whether the token expiration datetime is in the past."""
     expires_at = refresh_token.expires_at
     if expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=timezone.utc)

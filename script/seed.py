@@ -1,3 +1,5 @@
+"""Database seeder for permissions, core roles, and the default admin user."""
+
 from database import SessionLocal
 from sql.models.role import Role
 from sql.models.permission import Permission
@@ -19,11 +21,12 @@ permissions = [
 role_names = [
     "admin",
     "manager",
-    "user"
+    "user",
 ]
 
 
 def seed_permissions():
+    """Populate base permissions in the database if missing."""
     for permission_name in permissions:
         permission = (
             db.query(Permission).filter(Permission.name == permission_name).first()
@@ -37,6 +40,7 @@ def seed_permissions():
 
 
 def seed_roles():
+    """Populate standard roles; mark 'user' as the default for new signups."""
     for role_name in role_names:
         role = db.query(Role).filter(Role.name == role_name).first()
 
@@ -47,10 +51,12 @@ def seed_roles():
 
 
 def assign_permissions():
+    """Map default permission sets to admin, manager, and user roles."""
     admin_role = db.query(Role).filter(Role.name == "admin").first()
     manager_role = db.query(Role).filter(Role.name == "manager").first()
     user_role = db.query(Role).filter(Role.name == "user").first()
     all_permissions = db.query(Permission).all()
+    # Admin gets full system access
     admin_role.permissions = all_permissions
     manager_permissions = (
         db.query(Permission)
@@ -59,12 +65,14 @@ def assign_permissions():
     )
 
     manager_role.permissions = manager_permissions
+    # Standard user has read-only self access
     user_permissions = db.query(Permission).filter(Permission.name == "user:read").all()
     user_role.permissions = user_permissions
     db.commit()
 
 
 def create_admin():
+    """Provision the initial admin account if it does not already exist."""
     admin = db.query(User).filter(User.email == "admin@test.com").first()
     if admin:
         return
@@ -91,3 +99,4 @@ if __name__ == "__main__":
     assign_permissions()
     create_admin()
     print("Seeding completed")
+

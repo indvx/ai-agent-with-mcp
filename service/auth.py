@@ -12,6 +12,8 @@ from schemas.auth import RegisterRequest, LoginRequest
 
 
 class AuthService:
+    """Handles user registration, authentication, token rotation, and revocation."""
+
     def __init__(self, db):
         self.db = db
         self._secret_key = os.getenv("SECRET_KEY")
@@ -25,13 +27,16 @@ class AuthService:
         self.db.close()
 
     def register(self, payload: RegisterRequest):
+        """Registers a new user account, assigns the default role, and creates initial tokens."""
+        # Ensure email is unique before attempting insert
         existing_user = user_crud.get_user(self.db, payload.email)
         if existing_user:
             raise HTTPException(status_code=400, detail="Email already exists")
 
+        # Every newly registered user receives the default role (e.g. 'user')
         default_role = role_crud.get_default_role(self.db)
         if not default_role:
-            raise HTTPException(status_code=500, detail=("Default role missing"))
+            raise HTTPException(status_code=500, detail="Default role missing")
 
         user = user_crud.create_user(
             self.db,
@@ -42,6 +47,7 @@ class AuthService:
         access_token = self.create_jwt_token(user.id, type="access")
         refresh_data = self.create_jwt_token(user.id, type="refresh")
 
+        # Save the refresh token in DB so it can be verified or revoked later
         refresh_token = refresh_token_crud.create_or_update_refresh_token(
             self.db,
             user_id=user.id,
@@ -57,19 +63,20 @@ class AuthService:
         }
 
     def login(self, payload: LoginRequest):
+        """Authenticates user credentials and issues access and refresh tokens."""
         user = user_crud.get_user(self.db, payload.email)
         if not user:
-            raise HTTPException(status_code=401, detail=("Invalid credentials"))
+            raise HTTPException(status_code=401, detail="Invalid credentials")
 
         valid_password = user_crud.verify_password(payload.password, user.password_hash)
         if not valid_password:
-            raise HTTPException(status_code=401, detail=("Invalid password"))
+            raise HTTPException(status_code=401, detail="Invalid password")
 
         if not user.is_active:
-            raise HTTPException(status_code=403, detail=("Your account is inactive"))
+            raise HTTPException(status_code=403, detail="Your account is inactive")
 
         if not user.is_verified:
-            raise HTTPException(status_code=403, detail=("Verify your account"))
+            raise HTTPException(status_code=403, detail="Verify your account")
 
         access_token = self.create_jwt_token(user.id, type="access")
         refresh_data = self.create_jwt_token(user.id, type="refresh")
@@ -89,25 +96,30 @@ class AuthService:
         }
 
     def refresh_token(self, refresh_token: str):
+        """Generates a new access token using a valid, unrevoked refresh token."""
         payload = self.decode_token(refresh_token)
         if payload.get("type") != "refresh":
-            raise HTTPException(status_code=401, detail=("Invalid token type"))
+            raise HTTPException(status_code=401, detail="Invalid token type")
 
+        # Each token has a unique 'jti' ID stored in DB to prevent reuse
         jti = payload.get("jti")
         ref_token = refresh_token_crud.get_token_by_jti_or_user_id(self.db, jti=jti)
         if not ref_token:
-            raise HTTPException(status_code=401, detail=("Token not found"))
+            raise HTTPException(status_code=401, detail="Token not found")
 
+        # Block the token if the user already logged out
         if ref_token.revoked:
-            raise HTTPException(status_code=401, detail=("Token is revoked"))
+            raise HTTPException(status_code=401, detail="Token is revoked")
 
         if refresh_token_crud.is_refresh_token_expired(ref_token):
-            raise HTTPException(status_code=401, detail=("Token is expired"))
+            raise HTTPException(status_code=401, detail="Token is expired")
 
+        # Issue a fresh short-lived access token
         access_token = self.create_jwt_token(ref_token.user_id, type="access")
         return {"access_token": access_token, "token_type": "bearer"}
 
     def logout(self, user_id: int):
+        """Invalidates the user's active refresh token in the database."""
         refresh_token = refresh_token_crud.get_token_by_jti_or_user_id(
             self.db, user_id=user_id, revoked=False
         )
@@ -118,6 +130,7 @@ class AuthService:
         return {"message": "Logged out successfully"}
 
     def create_jwt_token(self, user_id: int, type: str = "access"):
+        """Creates a signed JWT with expiration timestamp and a unique JTI."""
         if type == "access":
             expire = datetime.now(timezone.utc) + timedelta(
                 minutes=self._access_token_expire_minutes
@@ -143,12 +156,13 @@ class AuthService:
         return {"token": token, "jti": jti, "expires_at": expire}
 
     def decode_token(self, token: str):
+        """Decodes JWT and verifies its cryptographic signature."""
         try:
             payload = jwt.decode(token, self._secret_key, algorithms=[self._algorithm])
             return payload
 
         except jwt.ExpiredSignatureError:
-            raise HTTPException(status_code=401, detail=("Token expired"))
+            raise HTTPException(status_code=401, detail="Token expired")
 
         except jwt.InvalidTokenError:
-            raise HTTPException(status_code=401, detail=("Invalid token"))
+            raise HTTPException(status_code=401, detail="Invalid token")

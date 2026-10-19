@@ -23,6 +23,7 @@ def get_users(
     db: Session = Depends(get_db),
     d: Any = Depends(has_permissions(["user:read", "user:manage"])),
 ):
+    """Returns a paginated list of all users. Requires user:read permission."""
     user_service = UserService(db)
     users = user_service.get_users(page, limit)
     return users
@@ -35,6 +36,7 @@ def get_users(
 def get_user(
     user_id: int, db: Session = Depends(get_db), d: Any = Depends(JWTBearer())
 ):
+    """Fetches details for a single user by ID."""
     user_service = UserService(db)
     return user_service.get_user(user_id)
 
@@ -43,5 +45,6 @@ def get_user(
 def delete_user(
     user_id: int, db: Session = Depends(get_db), d: Any = Depends(has_roles(["admin"]))
 ):
+    """Permanently deletes a user account. Restricted to administrators."""
     user_service = UserService(db)
     return user_service.delete_user(user_id)

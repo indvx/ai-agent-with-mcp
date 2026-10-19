@@ -1,3 +1,5 @@
+"""Authentication endpoints for user registration, login, token refresh, and profile retrieval."""
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 

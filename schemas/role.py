@@ -3,6 +3,7 @@ from typing import List
 
 
 class PermissionResponse(BaseModel):
+    """Granular permission record returned in role metadata."""
     id: int
     name: str
 
@@ -11,6 +12,7 @@ class PermissionResponse(BaseModel):
 
 
 class RoleResponse(BaseModel):
+    """Role definition including its assigned permission list."""
     id: int
     name: str
     description: str | None

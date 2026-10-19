@@ -3,6 +3,7 @@ from typing import Any, List, Optional
 
 
 class UserResponse(BaseModel):
+    """User account details returned in API responses."""
     id: int
     full_name: str
     email: EmailStr
@@ -15,6 +16,7 @@ class UserResponse(BaseModel):
 
 
 class Meta(BaseModel):
+    """Pagination metadata including page number, limit, and total record count."""
     current_items: Optional[int] = None
     limit: Optional[int] = None
     page: Optional[int] = None
@@ -22,5 +24,6 @@ class Meta(BaseModel):
 
 
 class UserListResponse(BaseModel):
+    """Paginated user listing response with items and pagination metadata."""
     users: Optional[List[UserResponse]] = []
     meta: Optional[Meta]

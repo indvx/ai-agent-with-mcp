@@ -12,6 +12,7 @@ from langchain.agents import create_agent
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
 
+# Defines the data passed between LangGraph nodes during a chat request
 class MainState(TypedDict):
     question: Optional[str]
     answer: Optional[Any]
@@ -19,13 +20,14 @@ class MainState(TypedDict):
     tool_calls: Optional[list]
 
 
+# Shared OpenAI chat model instance for the AI agent
 llm = ChatOpenAI(
     model=os.getenv("OPENAI_MODEL", "gpt-3.5-turbo"), temperature=0, verbose=True
 )
 
 
 class LanggraphService:
-    """Connects the chat flow to MCP tools and runs the agent."""
+    """Manages the LangGraph agent workflow and connects it to the MCP tool server."""
 
     def __init__(self):
         self.__graph = None
@@ -33,7 +35,7 @@ class LanggraphService:
         self.__mcp_url = os.getenv("MCP_URL", "http://localhost:8001/mcp")
 
     async def initialize(self):
-        """Connect to the configured MCP server before running the agent."""
+        """Connects to the FastMCP database tool server running over HTTP streaming."""
         try:
             self.__mcp_client = MultiServerMCPClient(
                 {
@@ -49,7 +51,7 @@ class LanggraphService:
             raise e
 
     async def ask_question(self, state: MainState):
-        """Ask the agent to answer from database results returned by MCP tools."""
+        """Invokes the AI agent with database tools to generate a verified answer."""
         messages = []
         tool_calls = []
 
@@ -85,7 +87,7 @@ class LanggraphService:
             )
         )
 
-        # Load the tools at runtime so the agent uses the tools exposed by this MCP server.
+        # Discover tools dynamically from the MCP server and bind them to the LLM
         tools = await self.__mcp_client.get_tools()
         agent = create_agent(llm, tools)
         result = await agent.ainvoke({"messages": messages})
@@ -93,6 +95,8 @@ class LanggraphService:
         input_tokens = 0
         output_tokens = 0
         total_tokens = 0
+
+        # Sum token usage across all internal tool-calling turns
         if isinstance(result, dict) and "messages" in result:
             for message in result["messages"]:
                 if hasattr(message, "tool_calls") and message.tool_calls:
@@ -119,7 +123,7 @@ class LanggraphService:
         }
 
     def build_pipeline(self):
-        """Build the one-node graph that hands each question to the agent."""
+        """Compiles the single-node LangGraph execution graph for chat requests."""
         if self.__graph is not None:
             return self.__graph
 

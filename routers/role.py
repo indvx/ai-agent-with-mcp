@@ -16,12 +16,14 @@ router = APIRouter(
 
 @router.get("/", dependencies=[Depends(has_permissions(["user:read"]))])
 def get_roles(db: Session = Depends(get_db)):
+    """Returns a list of all configured user roles."""
     role_service = RoleService(db)
     return role_service.get_roles()
 
 
 @router.post("/assign", dependencies=[Depends(has_permissions(["role:manage"]))])
 def assign_role(user_id: int, role_id: int, db: Session = Depends(get_db)):
+    """Assigns a role to a user. Requires role:manage permission."""
     role_service = RoleService(db)
     role_service.assign_role(user_id, role_id)
     return {"message": "Role assigned successfully"}
@@ -29,6 +31,7 @@ def assign_role(user_id: int, role_id: int, db: Session = Depends(get_db)):
 
 @router.post("/permission", dependencies=[Depends(has_permissions(["role:manage"]))])
 def assign_permission(role_id: int, permission_id: int, db: Session = Depends(get_db)):
+    """Grants a specific permission to a role. Requires role:manage permission."""
     role_service = RoleService(db)
     role_service.assign_permission(role_id, permission_id)
     return {"message": "Permission assigned successfully"}

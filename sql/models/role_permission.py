@@ -3,6 +3,7 @@ from database import Base
 
 
 class RolePermission(Base):
+    """Bridge table associating roles with granted permissions."""
     __tablename__ = "role_permissions"
     id = Column(Integer, primary_key=True, index=True)
     role_id = Column(Integer, ForeignKey("roles.id"))

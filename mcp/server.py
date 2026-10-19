@@ -24,6 +24,7 @@ mcp = FastMCP(
 MAX_RECORD_LIMIT = 20
 MAX_TABLE_LIMIT = 20
 
+# Never expose sensitive columns like credentials or tokens to the LLM agent
 SENSITIVE_FIELDS = {
     "password",
     "password_hash",
@@ -37,6 +38,7 @@ SENSITIVE_FIELDS = {
 
 
 def get_conn():
+    """Opens a connection to the configured MySQL database."""
     return mysql.connector.connect(
         host=os.getenv("MYSQL_HOST"),
         port=int(os.getenv("MYSQL_PORT", "3306")),
@@ -47,6 +49,7 @@ def get_conn():
 
 
 def success_response(data):
+    """Wraps data in standard MCP success response format."""
     return {
         "success": True,
         "data": data,
@@ -54,6 +57,7 @@ def success_response(data):
 
 
 def error_response(message, **kwargs):
+    """Wraps error message in standard MCP error response format."""
     return {
         "success": False,
         "error": message,
@@ -363,6 +367,7 @@ def list_records(
                     invalid_fields.append(requested_field)
                     continue
 
+                # Strip sensitive credentials so the LLM cannot see them
                 if actual_field.lower() in SENSITIVE_FIELDS:
                     continue
 
@@ -385,6 +390,7 @@ def list_records(
 
         else:
 
+            # Default to all non-sensitive table columns
             selected_fields = [
                 field_name
                 for field_name in available_field_names
@@ -449,6 +455,7 @@ def list_records(
         limit = min(max(limit or 1, 1), MAX_RECORD_LIMIT)
         offset = max(offset or 0, 0)
 
+        # Request limit + 1 so we can check if there are more records without a separate COUNT(*)
         query += " LIMIT %s OFFSET %s"
         params.append(limit + 1)
         params.append(offset)

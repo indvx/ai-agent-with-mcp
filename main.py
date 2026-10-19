@@ -11,6 +11,7 @@ app = FastAPI(
     version="1.0.0",
 )
 
+# Enable CORS so frontend web apps can call the API without browser errors
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -19,17 +20,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
+# Register route modules for chat, authentication, roles, and users
 app.include_router(chat.router)
 app.include_router(auth.router)
 app.include_router(role.router)
 app.include_router(user.router)
 
+# Mount static folder for logo assets and stream test HTML
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
 @app.get("/docs", include_in_schema=False)
 async def swagger_ui_html(req: Request) -> HTMLResponse:
+    """Displays custom Swagger UI documentation using our branded logo."""
     root_path = req.scope.get("root_path", "").rstrip("/")
     openapi_url = root_path + app.openapi_url
     oauth2_redirect_url = app.swagger_ui_oauth2_redirect_url
@@ -50,9 +53,11 @@ async def swagger_ui_html(req: Request) -> HTMLResponse:
 
 @app.get("/")
 async def root():
+    """Simple health check endpoint returning welcome message."""
     return {"message": "Welcome to mcp chat"}
 
 
 @app.get("/health")
 async def health_check(request: Request):
+    """Liveness probe used by Docker and container monitors."""
     return {"status": "ok"}

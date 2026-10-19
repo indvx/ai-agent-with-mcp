@@ -6,6 +6,7 @@ from database import Base
 
 
 class RefreshToken(Base):
+    """Stores issued refresh tokens and their revocation status for session management."""
     __tablename__ = "refresh_tokens"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -16,4 +17,5 @@ class RefreshToken(Base):
     expires_at = Column(DateTime, nullable=False)
     created_at = Column(DateTime, default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
 
+    # Owner user of this refresh token
     user = relationship("User", back_populates="refresh_tokens")
