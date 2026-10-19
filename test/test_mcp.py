@@ -114,3 +114,64 @@ def test_list_records_closes_connection_on_error():
         assert "Database query failed" in response["error"]
         mock_cur.close.assert_called_once()
         mock_conn.close.assert_called_once()
+
+
+def test_serialize_row_truncates_long_strings():
+    """Verify lengthy text values are truncated to 120 characters to preserve tokens."""
+    long_text = "A" * 200
+    raw = {"id": 1, "bio": long_text}
+
+    result = serialize_row(raw)
+
+    assert len(result["bio"]) == 123
+    assert result["bio"].endswith("...")
+
+
+def test_get_fields_returns_compact_field_list():
+    """Verify get_fields returns a lightweight list of column names rather than verbose metadata."""
+    mock_fields = [
+        {"column_name": "id", "data_type": "int", "is_nullable": "NO", "column_key": "PRI"},
+        {"column_name": "email", "data_type": "varchar", "is_nullable": "NO", "column_key": ""},
+        {"column_name": "password", "data_type": "varchar", "is_nullable": "NO", "column_key": ""},
+    ]
+
+    with patch.object(mcp_server, "get_actual_table_name", return_value="users"), \
+         patch.object(mcp_server, "get_table_fields_raw", return_value=mock_fields):
+
+        response = mcp_server.get_fields(table="users")
+
+        assert response["success"] is True
+        assert response["data"]["fields"] == ["id", "email"]
+        assert "password" not in response["data"]["fields"]
+
+
+def test_list_records_excludes_heavy_columns_by_default():
+    """Verify list_records excludes blobs, file paths, and bulky details by default."""
+    mock_conn = MagicMock()
+    mock_cur = MagicMock()
+    mock_conn.cursor.return_value = mock_cur
+    mock_cur.fetchall.return_value = []
+
+    mock_fields = [
+        {"column_name": "id", "data_type": "int", "is_nullable": "NO", "column_key": "PRI"},
+        {"column_name": "first_name", "data_type": "varchar", "is_nullable": "YES", "column_key": ""},
+        {"column_name": "encrypted_blob", "data_type": "longblob", "is_nullable": "YES", "column_key": ""},
+        {"column_name": "resume", "data_type": "varchar", "is_nullable": "YES", "column_key": ""},
+        {"column_name": "avatar_file", "data_type": "varchar", "is_nullable": "YES", "column_key": ""},
+    ]
+
+    with patch.object(mcp_server, "get_actual_table_name", return_value="employees"), \
+         patch.object(mcp_server, "get_table_fields_raw", return_value=mock_fields), \
+         patch.object(mcp_server, "get_conn", return_value=mock_conn):
+
+        list_records(table="employees")
+
+        called_query = mock_cur.execute.call_args[0][0]
+        # Should include core columns
+        assert "`id`" in called_query
+        assert "`first_name`" in called_query
+        # Should exclude heavy columns
+        assert "`encrypted_blob`" not in called_query
+        assert "`resume`" not in called_query
+        assert "`avatar_file`" not in called_query
+
