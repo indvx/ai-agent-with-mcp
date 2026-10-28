@@ -2,7 +2,7 @@ import sys
 import os
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Optional
+from typing import Optional, Union
 
 from dotenv import load_dotenv
 import mysql.connector
@@ -209,21 +209,48 @@ def get_table_fields_raw(table: str):
         conn.close()
 
 
+def find_field_info(
+    available_fields: list[dict],
+    requested_field: str,
+) -> Optional[dict]:
+    """Find field metadata case-insensitively."""
+    requested_field = requested_field.lower()
+
+    for field in available_fields:
+        if field["column_name"].lower() == requested_field:
+            return field
+
+    return None
+
+
 def find_field(
     available_fields: list[dict],
     requested_field: str,
 ) -> Optional[str]:
     """Find a field case-insensitively."""
+    info = find_field_info(available_fields, requested_field)
+    return info["column_name"] if info else None
 
-    requested_field = requested_field.lower()
 
-    for field in available_fields:
-        actual_name = field["column_name"]
+def build_filter_condition(
+    field_info: dict,
+    value: Union[str, int, float, bool],
+) -> tuple[str, list]:
+    """Builds SQL WHERE clause handling boolean/tinyint mappings and text matching."""
+    field_name = field_info["column_name"]
+    data_type = field_info.get("data_type", "").lower()
 
-        if actual_name.lower() == requested_field:
-            return actual_name
+    # Normalize boolean and tinyint flags to exact numeric matches
+    if data_type in ("tinyint", "boolean"):
+        val_str = str(value).strip().lower()
+        if val_str in ("1", "true", "yes", "active", "enabled"):
+            return f"`{field_name}` = %s", [1]
+        if val_str in ("0", "false", "no", "inactive", "disabled"):
+            return f"`{field_name}` = %s", [0]
+        if val_str.isdigit():
+            return f"`{field_name}` = %s", [int(val_str)]
 
-    return None
+    return f"`{field_name}` LIKE %s", [f"%{value}%"]
 
 
 @mcp.tool(
@@ -345,6 +372,7 @@ def get_fields(table: str):
     description=(
         "List records from a database table. "
         "Never return more than 20 records in one call. "
+        "For boolean/tinyint status columns, 1 represents active/true and 0 represents inactive/false. "
         "If the user asks for one, single, or only one record, "
         "use limit=1. "
         "If the user asks for a specific number, use that number "
@@ -360,7 +388,7 @@ def get_fields(table: str):
 def list_records(
     table: str,
     field: Optional[str] = None,
-    value: Optional[str] = None,
+    value: Optional[Union[str, int, float, bool]] = None,
     fields: Optional[list[str]] = None,
     limit: int = 20,
     offset: int = 0,
@@ -428,16 +456,16 @@ def list_records(
                 if field_name.lower() not in SENSITIVE_FIELDS
             ]
 
-        matched_field = None
+        matched_field_info = None
 
         if field:
 
-            matched_field = find_field(
+            matched_field_info = find_field_info(
                 available_fields,
                 field,
             )
 
-            if not matched_field:
+            if not matched_field_info:
                 return error_response(
                     f"Field '{field}' not found " f"in table '{actual_table}'.",
                     available_fields=[
@@ -446,6 +474,8 @@ def list_records(
                         if field_name.lower() not in SENSITIVE_FIELDS
                     ],
                 )
+
+            matched_field = matched_field_info["column_name"]
 
             if matched_field.lower() in SENSITIVE_FIELDS:
                 return error_response(
@@ -459,8 +489,8 @@ def list_records(
 
         if not order_field:
 
-            if matched_field:
-                order_field = matched_field
+            if matched_field_info:
+                order_field = matched_field_info["column_name"]
 
             elif selected_fields:
                 order_field = selected_fields[0]
@@ -473,11 +503,14 @@ def list_records(
 
         params = []
 
-        if matched_field and value is not None:
+        if matched_field_info and value is not None:
 
-            query += f" WHERE `{matched_field}` LIKE %s"
-
-            params.append(f"%{value}%")
+            where_sql, where_params = build_filter_condition(
+                matched_field_info,
+                value,
+            )
+            query += f" WHERE {where_sql}"
+            params.extend(where_params)
 
         if order_field:
 
@@ -535,13 +568,14 @@ def list_records(
 @mcp.tool(
     description=(
         "Count records in a database table. "
-        "Use field and value when counting matching records."
+        "Use field and value when counting matching records. "
+        "For boolean/tinyint status columns, 1 represents active/true and 0 represents inactive/false."
     )
 )
 def count_records_table(
     table: str,
     field: Optional[str] = None,
-    value: Optional[str] = None,
+    value: Optional[Union[str, int, float, bool]] = None,
 ):
     """Count records in a table."""
 
@@ -553,16 +587,16 @@ def count_records_table(
 
         available_fields = get_table_fields_raw(actual_table)
 
-        matched_field = None
+        matched_field_info = None
 
         if field:
 
-            matched_field = find_field(
+            matched_field_info = find_field_info(
                 available_fields,
                 field,
             )
 
-            if not matched_field:
+            if not matched_field_info:
                 return error_response(
                     f"Field '{field}' not found " f"in table '{actual_table}'.",
                     available_fields=[
@@ -572,20 +606,25 @@ def count_records_table(
                     ],
                 )
 
+            matched_field = matched_field_info["column_name"]
+
             if matched_field.lower() in SENSITIVE_FIELDS:
                 return error_response(
                     f"Searching by field " f"'{matched_field}' is not allowed."
                 )
 
-        if matched_field and value is not None:
+        if matched_field_info and value is not None:
 
+            where_sql, where_params = build_filter_condition(
+                matched_field_info,
+                value,
+            )
             query = (
                 f"SELECT COUNT(*) "
                 f"FROM `{actual_table}` "
-                f"WHERE `{matched_field}` LIKE %s"
+                f"WHERE {where_sql}"
             )
-
-            params = [f"%{value}%"]
+            params = where_params
 
         else:
 
