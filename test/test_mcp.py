@@ -52,13 +52,12 @@ def test_serialize_row_primitives():
 def test_get_conn_configures_sqlite(tmp_path):
     """Verify get_conn connects to the configured SQLite database path with row_factory."""
     test_db = tmp_path / "test.db"
-    with patch.object(mcp_server, "SQLITE_DB_PATH", str(test_db)):
-        conn = get_conn()
-        try:
-            assert isinstance(conn, sqlite3.Connection)
-            assert conn.row_factory == sqlite3.Row
-        finally:
-            conn.close()
+    conn = get_conn(str(test_db))
+    try:
+        assert isinstance(conn, sqlite3.Connection)
+        assert conn.row_factory == sqlite3.Row
+    finally:
+        conn.close()
 
 
 def test_list_records_returns_key_value_dicts():

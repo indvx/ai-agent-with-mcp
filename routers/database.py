@@ -1,11 +1,23 @@
 import os
-import re
 import shutil
 import sqlite3
 from pathlib import Path
-from fastapi import APIRouter, File, HTTPException, UploadFile, status
+from typing import Optional, Union
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
+from pydantic import BaseModel, Field
+from schemas.database import UpdateDatabase
 
-from database import SQLITE_DB_PATH, get_sqlite_conn
+from core.utility import sanitize_sql_for_sqlite
+from database import (
+    DATABASES_DIR,
+    delete_database_record,
+    get_active_database_info,
+    get_active_database_path,
+    get_sqlite_conn,
+    list_registered_databases,
+    register_database,
+    update_database,
+)
 
 router = APIRouter(
     prefix="/database",
@@ -14,113 +26,36 @@ router = APIRouter(
 )
 
 
-def sanitize_sql_for_sqlite(sql: str) -> str:
-    """Translates SQL dumps (e.g. MySQL mysqldump) into SQLite-compatible DDL and DML."""
-    # Strip MySQL conditional comments (/*!40101 ... */;) and standard block comments
-    sql = re.sub(r"/\*![\s\S]*?\*/;?", "", sql)
-    sql = re.sub(r"/\*[\s\S]*?\*/;?", "", sql)
-
-    out_lines = []
-    for line in sql.splitlines():
-        trimmed = line.strip()
-        # Skip comment lines (-- or #) and empty lines
-        if not trimmed or trimmed.startswith("--") or trimmed.startswith("#"):
-            continue
-        # Skip MySQL session variable assignments and table lock directives
-        if re.match(r"^(SET|LOCK\s+TABLES|UNLOCK\s+TABLES)\b", trimmed, re.IGNORECASE):
-            continue
-        out_lines.append(line)
-
-    sql = "\n".join(out_lines)
-
-    # Convert MySQL backslash quote escaping (\' -> '') to standard SQLite string escaping
-    sql = sql.replace(r"\'", "''")
-    sql = sql.replace(r'\"', '"')
-
-    # Strip character set introducers: _utf8mb4 'text' -> 'text'
-    sql = re.sub(r"\b_(?:utf8mb4|utf8|latin1|binary)\s*'", "'", sql, flags=re.IGNORECASE)
-
-    def fix_create_table(match):
-        body = match.group(0)
-
-        # Strip table options after closing parenthesis: ') ENGINE=... DEFAULT CHARSET=...;' -> ');'
-        body = re.sub(
-            r"\)\s*(?:ENGINE|DEFAULT\s+CHARSET|CHARSET|COLLATE|AUTO_INCREMENT|ROW_FORMAT|COMMENT)[^;]*;",
-            ");",
-            body,
-            flags=re.IGNORECASE,
+def get_tables_for_conn(conn: sqlite3.Connection) -> list[str]:
+    """Helper to discover all non-system table names in a SQLite connection."""
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
         )
-
-        # Convert AUTO_INCREMENT column to SQLite INTEGER PRIMARY KEY AUTOINCREMENT
-        has_auto_inc = bool(re.search(r"\bAUTO_INCREMENT\b", body, re.IGNORECASE))
-        if has_auto_inc:
-            body = re.sub(
-                r'([`"\[]?\w+[`"\]]?)\s+(?:(?:TINY|SMALL|MEDIUM|BIG)?INT(?:\(\d+\))?)\s*(?:UNSIGNED\s*)?(?:NOT\s+NULL\s*)?AUTO_INCREMENT',
-                r"\1 INTEGER PRIMARY KEY AUTOINCREMENT",
-                body,
-                flags=re.IGNORECASE,
-            )
-            # Remove redundant table-level PRIMARY KEY definition if converted at column level
-            body = re.sub(r",\s*PRIMARY\s+KEY\s*\([^)]+\)", "", body, flags=re.IGNORECASE)
-
-        # Remove secondary index definitions inside CREATE TABLE
-        body = re.sub(
-            r",\s*(?:FULLTEXT\s+|SPATIAL\s+)?KEY\s+[`\"\[]?\w+[`\"\]]?\s*\([^)]+\)",
-            "",
-            body,
-            flags=re.IGNORECASE,
-        )
-        body = re.sub(
-            r",\s*INDEX\s+[`\"\[]?\w+[`\"\]]?\s*\([^)]+\)",
-            "",
-            body,
-            flags=re.IGNORECASE,
-        )
-        body = re.sub(
-            r"\bUNIQUE\s+KEY\s+[`\"\[]?\w+[`\"\]]?\s*(\([^)]+\))",
-            r"UNIQUE \1",
-            body,
-            flags=re.IGNORECASE,
-        )
-
-        # Strip column collations and character sets not supported by SQLite
-        body = re.sub(r"\bCOLLATE\s+[a-zA-Z0-9_]+\b", "", body, flags=re.IGNORECASE)
-        body = re.sub(
-            r"\b(?:DEFAULT\s+)?(?:CHARACTER\s+SET|CHARSET)\s+[a-zA-Z0-9_]+\b",
-            "",
-            body,
-            flags=re.IGNORECASE,
-        )
-
-        # Normalize data types to SQLite affinities
-        body = re.sub(
-            r"\b(?:TINY|SMALL|MEDIUM|BIG)?INT(?:\(\d+\))?(?:\s+UNSIGNED)?\b",
-            "INTEGER",
-            body,
-            flags=re.IGNORECASE,
-        )
-        body = re.sub(r"\b(?:VARCHAR|CHAR)(?:\(\d+\))?\b", "TEXT", body, flags=re.IGNORECASE)
-        body = re.sub(r"\b(?:LONG|MEDIUM|TINY)?TEXT\b", "TEXT", body, flags=re.IGNORECASE)
-        body = re.sub(r"\b(?:LONG|MEDIUM|TINY)?BLOB\b", "BLOB", body, flags=re.IGNORECASE)
-        body = re.sub(r"\b(?:ENUM|SET)\s*\([^)]+\)", "TEXT", body, flags=re.IGNORECASE)
-        body = re.sub(r"\bDOUBLE(?:\(\d+,\d+\))?\b", "REAL", body, flags=re.IGNORECASE)
-        body = re.sub(r"\bFLOAT(?:\(\d+,\d+\))?\b", "REAL", body, flags=re.IGNORECASE)
-        body = re.sub(r"\bDATETIME(?:\(\d+\))?\b", "TEXT", body, flags=re.IGNORECASE)
-        body = re.sub(r"\bTIMESTAMP(?:\(\d+\))?\b", "TEXT", body, flags=re.IGNORECASE)
-
-        # Clean trailing commas before the closing parenthesis
-        body = re.sub(r",\s*\)", "\n)", body)
-
-        return body
-
-    return re.sub(r"CREATE\s+TABLE[\s\S]*?;", fix_create_table, sql, flags=re.IGNORECASE)
+        return [row[0] for row in cur.fetchall()]
+    finally:
+        cur.close()
 
 
 @router.post("/import")
-async def import_database_file(file: UploadFile = File(...)):
-    """Imports an SQLite database (.db / .sqlite) or an SQL script (.sql) into the active database."""
+async def import_database_file(
+    file: UploadFile = File(
+        ...,
+        description="Imports an SQLite database (.db / .sqlite) or an SQL script (.sql)",
+    ),
+    is_active: bool = Query(
+        False, description="Set this database as active default immediately"
+    ),
+):
+    """Imports an SQLite database (.db / .sqlite) or an SQL script (.sql)"""
     filename = file.filename or ""
     suffix = Path(filename).suffix.lower()
+    if file.size is not None and file.size > 5 * 1024 * 1024:
+        raise HTTPException(
+            status_code=413,
+            detail="Maximum allowed file size is 5 MB",
+        )
 
     if suffix not in (".db", ".sqlite", ".sqlite3", ".sql"):
         raise HTTPException(
@@ -128,41 +63,52 @@ async def import_database_file(file: UploadFile = File(...)):
             detail=f"Unsupported file format '{suffix}'. Please upload a .db, .sqlite, or .sql file.",
         )
 
-    target_path = Path(os.getenv("SQLITE_DB_PATH", "app.db"))
+    db_name = Path(filename).stem
+    target_path = DATABASES_DIR / f"{db_name}.db"
 
     try:
         if suffix in (".db", ".sqlite", ".sqlite3"):
-            # Write the uploaded binary database file directly to target_path
+            # Write uploaded binary database file directly to databases/ directory
             with open(target_path, "wb") as buffer:
                 shutil.copyfileobj(file.file, buffer)
 
         elif suffix == ".sql":
-            # Sanitize and execute SQL script to support both SQLite and MySQL dump dialects
+            # Start from a clean database file if one already exists
+            if target_path.exists():
+                target_path.unlink()
+
             content = await file.read()
             sql_text = content.decode("utf-8", errors="replace")
             sanitized_sql = sanitize_sql_for_sqlite(sql_text)
 
-            conn = get_sqlite_conn(str(target_path))
+            conn = get_sqlite_conn(target_path)
             try:
+                conn.execute("PRAGMA foreign_keys = OFF")
                 conn.executescript(sanitized_sql)
             finally:
                 conn.close()
 
-        # Verify tables in the newly populated database
-        conn = get_sqlite_conn(str(target_path))
+        # Register entry in app.db catalog without forcing default
+        db_entry = register_database(db_name, status=1 if is_active else 0)
+        if is_active:
+            db_entry = update_database(db_name, status=1)
+        # Inspect populated tables
+        conn = get_sqlite_conn(target_path)
         try:
-            cur = conn.cursor()
-            cur.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
-            )
-            tables = [row[0] for row in cur.fetchall()]
+            tables = get_tables_for_conn(conn)
         finally:
             conn.close()
 
         return {
             "status": "success",
-            "message": f"Successfully imported {filename}",
-            "database_file": str(target_path),
+            "message": f"Successfully imported {filename} into databases/{db_name}.db",
+            "database": {
+                "id": db_entry["id"],
+                "name": db_entry["name"],
+                "filename": f"{db_entry['name']}.db",
+                "is_default": bool(db_entry["is_default"]),
+                "status": db_entry["status"],
+            },
             "total_tables": len(tables),
             "tables": tables,
         }
@@ -174,10 +120,108 @@ async def import_database_file(file: UploadFile = File(...)):
         )
 
 
+@router.get("/list")
+async def list_databases():
+    """Returns all registered databases from app.db with table counts and active status for the frontend."""
+    records = list_registered_databases()
+    active_info = get_active_database_info()
+    active_name = active_info["name"] if active_info else None
+    result = []
+    for rec in records:
+        name = rec["name"]
+        file_path = DATABASES_DIR / f"{name}.db"
+        exists = file_path.exists()
+        tables = []
+        size_bytes = 0
+
+        if exists:
+            size_bytes = file_path.stat().st_size
+            try:
+                conn = get_sqlite_conn(file_path)
+                tables = get_tables_for_conn(conn)
+                conn.close()
+            except Exception:
+                tables = []
+
+        result.append(
+            {
+                "id": rec["id"],
+                "name": name,
+                "filename": f"{name}.db",
+                "is_default": bool(rec["is_default"]),
+                "status": rec["status"],
+                "size_bytes": size_bytes,
+                "exists": exists,
+                "total_tables": len(tables),
+                "tables": tables,
+            }
+        )
+
+    return {
+        "active_database": active_name,
+        "total_databases": len(result),
+        "databases": result,
+    }
+
+@router.put("/{db_identifier}")
+async def select_active_database(
+    db_identifier: str, database: Optional[UpdateDatabase] = None
+):
+    """Updates database active status or default flags in registry."""
+    is_default = database.is_default if database else None
+    status_val = database.status if database else 1
+    updated = update_database(db_identifier, is_default=is_default, status=status_val)
+    if not updated:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Database '{db_identifier}' not found in registry.",
+        )
+
+    file_path = DATABASES_DIR / f"{updated['name']}.db"
+    return {
+        "status": "success",
+        "message": f"Database '{updated['name']}' updated successfully.",
+        "database": {
+            "id": updated["id"],
+            "name": updated["name"],
+            "filename": f"{updated['name']}.db",
+            "is_default": bool(updated["is_default"]),
+            "status": updated["status"],
+            "exists": file_path.exists(),
+        },
+    }
+
+
+@router.delete("/{db_identifier}")
+async def delete_database(db_identifier: str):
+    """Deletes a database from the registry and removes its physical file."""
+    success, message = delete_database_record(db_identifier)
+    if not success:
+        if message == "not_found":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Database '{db_identifier}' not found.",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=message,
+        )
+
+    return {
+        "status": "success",
+        "message": f"Successfully deleted database '{db_identifier}'.",
+    }
+
+
 @router.get("/info")
-async def get_database_info():
-    """Returns metadata and table summary of the currently active SQLite database."""
-    target_path = Path(os.getenv("SQLITE_DB_PATH", "app.db"))
+async def get_database_info(
+    db: Optional[str] = Query(None, description="Database name (defaults to active)")
+):
+    """Returns metadata and table summary of the specified or active SQLite database."""
+    if db:
+        target_path = DATABASES_DIR / f"{Path(db).stem}.db"
+    else:
+        target_path = get_active_database_path()
 
     if not target_path.exists():
         return {
@@ -187,13 +231,9 @@ async def get_database_info():
             "tables": [],
         }
 
-    conn = get_sqlite_conn(str(target_path))
+    conn = get_sqlite_conn(target_path)
     try:
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
-        )
-        tables = [row[0] for row in cur.fetchall()]
+        tables = get_tables_for_conn(conn)
         return {
             "database_file": str(target_path),
             "exists": True,
@@ -206,21 +246,22 @@ async def get_database_info():
 
 
 @router.get("/tables")
-async def list_tables_overview():
-    """Returns a list of all tables in the active database with column and row counts."""
-    target_path = Path(os.getenv("SQLITE_DB_PATH", "app.db"))
+async def list_tables_overview(
+    db: Optional[str] = Query(None, description="Database name (defaults to active)")
+):
+    """Returns an overview of all tables in the specified or active database with row and column counts."""
+    if db:
+        target_path = DATABASES_DIR / f"{Path(db).stem}.db"
+    else:
+        target_path = get_active_database_path()
 
     if not target_path.exists():
         return {"total_tables": 0, "tables": []}
 
-    conn = get_sqlite_conn(str(target_path))
+    conn = get_sqlite_conn(target_path)
     try:
+        table_names = get_tables_for_conn(conn)
         cur = conn.cursor()
-        cur.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
-        )
-        table_names = [row[0] for row in cur.fetchall()]
-
         tables_data = []
         for name in table_names:
             cur.execute(f'PRAGMA table_info("{name}")')
@@ -237,6 +278,7 @@ async def list_tables_overview():
             )
 
         return {
+            "database": target_path.stem,
             "total_tables": len(tables_data),
             "tables": tables_data,
         }
@@ -245,20 +287,25 @@ async def list_tables_overview():
 
 
 @router.get("/tables/{table_name}")
-async def get_table_details_endpoint(table_name: str):
+async def get_table_details(
+    table_name: str,
+    db: Optional[str] = Query(None, description="Database name (defaults to active)"),
+):
     """Returns detailed structure for a given table including column definitions and row count."""
-    target_path = Path(os.getenv("SQLITE_DB_PATH", "app.db"))
+    if db:
+        target_path = DATABASES_DIR / f"{Path(db).stem}.db"
+    else:
+        target_path = get_active_database_path()
 
     if not target_path.exists():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Table '{table_name}' does not exist.",
+            detail=f"Database file '{target_path.name}' does not exist.",
         )
 
-    conn = get_sqlite_conn(str(target_path))
+    conn = get_sqlite_conn(target_path)
     try:
         cur = conn.cursor()
-        # Find exact case-insensitive table name
         cur.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND LOWER(name) = LOWER(?) AND name NOT LIKE 'sqlite_%'",
             (table_name,),
@@ -289,6 +336,7 @@ async def get_table_details_endpoint(table_name: str):
         row_count = cur.fetchone()[0]
 
         return {
+            "database": target_path.stem,
             "table": actual_name,
             "total_rows": row_count,
             "total_columns": len(columns),

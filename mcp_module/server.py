@@ -8,12 +8,14 @@ from typing import Optional, Union
 
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
-
+from database import (
+    get_sqlite_conn,
+    get_active_database_path,
+)
 load_dotenv()
 
 MCP_HOST = os.getenv("MCP_HOST", "0.0.0.0")
 MCP_PORT = int(os.getenv("MCP_PORT", "8001"))
-SQLITE_DB_PATH = os.getenv("SQLITE_DB_PATH", "app.db")
 
 mcp = FastMCP(
     "sqlite-agent",
@@ -23,6 +25,11 @@ mcp = FastMCP(
 
 MAX_RECORD_LIMIT = 20
 MAX_TABLE_LIMIT = 100
+
+
+def get_conn(db: str = None) -> sqlite3.Connection:
+    """Returns a connection to the active or specified SQLite database with dictionary rows enabled."""
+    return get_sqlite_conn(db)
 
 # Sensitive credential fields excluded from schema discovery and queries
 SENSITIVE_FIELDS = {
@@ -77,15 +84,6 @@ HEAVY_DATA_TYPES = {
     "longtext",
     "mediumtext",
 }
-
-
-def get_conn() -> sqlite3.Connection:
-    """Returns a connection to the active SQLite database with dictionary rows enabled."""
-    conn = sqlite3.connect(SQLITE_DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
-
 
 def serialize_row(row: dict) -> dict:
     """Converts database values into JSON-serializable primitives and handles length limits."""
@@ -283,7 +281,7 @@ def count_tables():
 
         return success_response(
             {
-                "database": Path(SQLITE_DB_PATH).name,
+                "database": get_active_database_path().name,
                 "count": total,
             }
         )
