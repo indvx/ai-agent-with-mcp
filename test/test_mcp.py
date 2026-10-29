@@ -1,7 +1,7 @@
 """Unit tests for MCP server database tools, connection pooling, and row serialization."""
 
 import importlib.util
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from decimal import Decimal
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -128,6 +128,26 @@ def test_serialize_row_truncates_long_strings():
 
     assert len(result["bio"]) == 123
     assert result["bio"].endswith("...")
+
+
+def test_serialize_row_handles_timedelta():
+    """Verify timedelta values from SQL TIME columns serialize as formatted strings."""
+    raw = {"id": 1, "start_time": timedelta(hours=9, minutes=41, seconds=0)}
+
+    result = serialize_row(raw)
+
+    assert result["start_time"] == "09:41:00"
+
+
+def test_serialize_row_preserves_report_content():
+    """Verify report and body text fields are preserved up to rich text limits."""
+    content = "Task update: " + ("detailed progress report " * 20)
+    raw = {"id": 1, "report": content}
+
+    result = serialize_row(raw)
+
+    assert result["report"] == content
+    assert not result["report"].endswith("...")
 
 
 def test_get_fields_returns_compact_field_list():
