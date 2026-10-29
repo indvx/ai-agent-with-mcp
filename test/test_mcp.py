@@ -1,6 +1,7 @@
-"""Unit tests for MCP server database tools, connection pooling, and row serialization."""
+"""Unit tests for MCP server database tools, SQLite connection, and row serialization."""
 
 import importlib.util
+import sqlite3
 from datetime import datetime, date, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -20,6 +21,7 @@ count_records_table = mcp_server.count_records_table
 count_tables = mcp_server.count_tables
 get_table_names = mcp_server.get_table_names
 build_filter_condition = mcp_server.build_filter_condition
+get_table_details = mcp_server.get_table_details
 
 
 def test_serialize_row_primitives():
@@ -47,20 +49,20 @@ def test_serialize_row_primitives():
     assert result["is_active"] is True
 
 
-def test_get_conn_uses_pool():
-    """Verify get_conn delegates to the underlying connection pool."""
-    mock_pool = MagicMock()
-    mock_connection = MagicMock()
-    mock_pool.get_connection.return_value = mock_connection
-
-    with patch.object(mcp_server, "_db_pool", mock_pool):
+def test_get_conn_configures_sqlite(tmp_path):
+    """Verify get_conn connects to the configured SQLite database path with row_factory."""
+    test_db = tmp_path / "test.db"
+    with patch.object(mcp_server, "SQLITE_DB_PATH", str(test_db)):
         conn = get_conn()
-        assert conn == mock_connection
-        mock_pool.get_connection.assert_called_once()
+        try:
+            assert isinstance(conn, sqlite3.Connection)
+            assert conn.row_factory == sqlite3.Row
+        finally:
+            conn.close()
 
 
 def test_list_records_returns_key_value_dicts():
-    """Verify list_records uses a dictionary cursor and returns key-value mappings."""
+    """Verify list_records returns dictionary rows and cleans up connections."""
     mock_conn = MagicMock()
     mock_cur = MagicMock()
     mock_conn.cursor.return_value = mock_cur
@@ -82,9 +84,7 @@ def test_list_records_returns_key_value_dicts():
 
         response = list_records(table="users", limit=10)
 
-        # Ensure dictionary=True cursor was requested
-        mock_conn.cursor.assert_called_with(dictionary=True)
-        # Ensure connections are closed
+        mock_conn.cursor.assert_called_once()
         mock_cur.close.assert_called_once()
         mock_conn.close.assert_called_once()
 
@@ -230,25 +230,25 @@ def test_build_filter_condition_tinyint():
     """Verify boolean and status strings map to integer flags for tinyint/boolean columns."""
     tinyint_col = {"column_name": "status", "data_type": "tinyint"}
     sql, params = build_filter_condition(tinyint_col, "active")
-    assert sql == "`status` = %s"
+    assert sql == "`status` = ?"
     assert params == [1]
 
     sql, params = build_filter_condition(tinyint_col, "inactive")
-    assert sql == "`status` = %s"
+    assert sql == "`status` = ?"
     assert params == [0]
 
     sql, params = build_filter_condition(tinyint_col, 1)
-    assert sql == "`status` = %s"
+    assert sql == "`status` = ?"
     assert params == [1]
 
     sql, params = build_filter_condition(tinyint_col, "0")
-    assert sql == "`status` = %s"
+    assert sql == "`status` = ?"
     assert params == [0]
 
     # Varchar columns should retain LIKE text matching
     varchar_col = {"column_name": "status", "data_type": "varchar"}
     sql, params = build_filter_condition(varchar_col, "active")
-    assert sql == "`status` LIKE %s"
+    assert sql == "`status` LIKE ?"
     assert params == ["%active%"]
 
 
@@ -275,8 +275,8 @@ def test_count_records_table_tinyint_mapping():
         assert response["data"]["count"] == 32
 
         mock_cur.execute.assert_called_once_with(
-            "SELECT COUNT(*) FROM `employees` WHERE `status` = %s",
-            [1],
+            "SELECT COUNT(*) FROM `employees` WHERE `status` = ?",
+            (1,),
         )
         mock_cur.close.assert_called_once()
         mock_conn.close.assert_called_once()
@@ -305,12 +305,12 @@ def test_list_records_tinyint_mapping():
         assert response["success"] is True
         assert response["data"]["count"] == 1
         query, params = mock_cur.execute.call_args[0]
-        assert "WHERE `status` = %s" in query
+        assert "WHERE `status` = ?" in query
         assert params[0] == 1
 
 
 def test_count_tables():
-    """Verify count_tables queries table count from information_schema."""
+    """Verify count_tables queries table count from sqlite_master."""
     mock_conn = MagicMock()
     mock_cur = MagicMock()
     mock_conn.cursor.return_value = mock_cur
@@ -343,5 +343,45 @@ def test_get_table_names_returns_total_and_tables():
         assert response["data"]["tables"] == ["employees", "users", "departments"]
         mock_cur.close.assert_called_once()
         mock_conn.close.assert_called_once()
+
+
+def test_get_table_details():
+    """Verify get_table_details returns columns with types, pk flags, and row count."""
+    mock_fields = [
+        {"column_name": "id", "data_type": "INTEGER", "is_nullable": "NO", "column_key": "PRI", "default_value": None},
+        {"column_name": "title", "data_type": "TEXT", "is_nullable": "YES", "column_key": "", "default_value": None},
+        {"column_name": "password", "data_type": "TEXT", "is_nullable": "NO", "column_key": "", "default_value": None},
+    ]
+
+    mock_conn = MagicMock()
+    mock_cur = MagicMock()
+    mock_conn.cursor.return_value = mock_cur
+    mock_cur.fetchone.return_value = [42]
+
+    with patch.object(mcp_server, "get_actual_table_name", return_value="projects"), \
+         patch.object(mcp_server, "get_table_fields_raw", return_value=mock_fields), \
+         patch.object(mcp_server, "get_conn", return_value=mock_conn):
+
+        response = get_table_details(table="projects")
+
+        assert response["success"] is True
+        data = response["data"]
+        assert data["table"] == "projects"
+        assert data["total_rows"] == 42
+        assert data["total_columns"] == 2  # Password excluded as sensitive
+        col_names = [c["name"] for c in data["columns"]]
+        assert "id" in col_names
+        assert "title" in col_names
+        assert "password" not in col_names
+
+
+def test_get_table_details_nonexistent():
+    """Verify get_table_details returns error response for missing table."""
+    with patch.object(mcp_server, "get_actual_table_name", return_value=None):
+        response = get_table_details(table="nonexistent")
+        assert response["success"] is False
+        assert "does not exist" in response["error"]
+
+
 
 

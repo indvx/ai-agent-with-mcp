@@ -1,10 +1,9 @@
-from fastapi import APIRouter, Request, Depends
+from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from service.langgraph_service import LanggraphService
 from schemas.chat import Chat
-from core.security import has_permissions
 
 router = APIRouter(
     prefix="/chat",
@@ -30,7 +29,7 @@ async def generate_stream_data(query: str):
         yield f"\n[Error: {e}]"
 
 
-@router.post("/", dependencies=[Depends(has_permissions(["chat:use"]))])
+@router.post("/")
 @limiter.limit("5/minute")
 async def chat(query: Chat, request: Request):
     """Run the agent and return its completed response."""

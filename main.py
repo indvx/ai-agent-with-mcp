@@ -1,10 +1,10 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from routers import chat, auth, role, user
+from routers import chat, database
 
 app = FastAPI(
-    title="MCP Chat API",
-    description="API for MCP Chat application",
+    title="MCP Chat & Database Agent API",
+    description="API for MCP Chat application with generic SQLite database support",
     version="1.0.0",
 )
 
@@ -17,11 +17,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Register route modules for chat, authentication, roles, and users
+# Register route modules for chat and database management
 app.include_router(chat.router)
-app.include_router(auth.router)
-app.include_router(role.router)
-app.include_router(user.router)
+app.include_router(database.router)
 
 
 @app.get("/")

@@ -1,33 +1,30 @@
 import sys
 import os
+import sqlite3
+from pathlib import Path
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Optional, Union
 
 from dotenv import load_dotenv
-import mysql.connector
-from mysql.connector.pooling import MySQLConnectionPool
 from mcp.server.fastmcp import FastMCP
-
 
 load_dotenv()
 
 MCP_HOST = os.getenv("MCP_HOST", "0.0.0.0")
 MCP_PORT = int(os.getenv("MCP_PORT", "8001"))
-MYSQL_DATABASE = os.getenv("MYSQL_DATABASE")
-
+SQLITE_DB_PATH = os.getenv("SQLITE_DB_PATH", "app.db")
 
 mcp = FastMCP(
-    "mysql-test",
+    "sqlite-agent",
     host=MCP_HOST,
     port=MCP_PORT,
 )
 
-
 MAX_RECORD_LIMIT = 20
 MAX_TABLE_LIMIT = 100
 
-# Never expose sensitive columns like credentials or tokens to the LLM agent
+# Sensitive credential fields excluded from schema discovery and queries
 SENSITIVE_FIELDS = {
     "password",
     "password_hash",
@@ -81,29 +78,13 @@ HEAVY_DATA_TYPES = {
     "mediumtext",
 }
 
-_db_pool: Optional[MySQLConnectionPool] = None
 
-
-def get_pool() -> MySQLConnectionPool:
-    """Lazily initializes and returns the shared MySQL connection pool."""
-    global _db_pool
-    if _db_pool is None:
-        _db_pool = MySQLConnectionPool(
-            pool_name="mcp_pool",
-            pool_size=int(os.getenv("MYSQL_POOL_SIZE", "5")),
-            pool_reset_session=True,
-            host=os.getenv("MYSQL_HOST"),
-            port=int(os.getenv("MYSQL_PORT", "3306")),
-            user=os.getenv("MYSQL_USER"),
-            password=os.getenv("MYSQL_PASSWORD"),
-            database=MYSQL_DATABASE,
-        )
-    return _db_pool
-
-
-def get_conn():
-    """Retrieves a connection from the MySQL connection pool."""
-    return get_pool().get_connection()
+def get_conn() -> sqlite3.Connection:
+    """Returns a connection to the active SQLite database with dictionary rows enabled."""
+    conn = sqlite3.connect(SQLITE_DB_PATH)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
 
 
 def serialize_row(row: dict) -> dict:
@@ -113,7 +94,7 @@ def serialize_row(row: dict) -> dict:
         if isinstance(val, (datetime, date)):
             serialized[key] = val.isoformat()
         elif isinstance(val, timedelta):
-            # Format timedelta (MySQL TIME columns) as HH:MM:SS
+            # Format timedelta (TIME columns) into HH:MM:SS
             total_seconds = int(val.total_seconds())
             hours, remainder = divmod(total_seconds, 3600)
             minutes, seconds = divmod(remainder, 60)
@@ -150,8 +131,7 @@ def error_response(message, **kwargs):
 
 
 def table_exists(table: str) -> bool:
-    """Check whether a table exists in the configured database."""
-
+    """Check whether a table exists in the configured SQLite database."""
     conn = get_conn()
     cur = conn.cursor()
 
@@ -159,16 +139,13 @@ def table_exists(table: str) -> bool:
         cur.execute(
             """
             SELECT COUNT(*)
-            FROM information_schema.tables
-            WHERE table_schema = %s
-              AND LOWER(table_name) = LOWER(%s)
+            FROM sqlite_master
+            WHERE type = 'table'
+              AND LOWER(name) = LOWER(?)
+              AND name NOT LIKE 'sqlite_%'
             """,
-            (
-                MYSQL_DATABASE,
-                table,
-            ),
+            (table,),
         )
-
         return cur.fetchone()[0] > 0
 
     finally:
@@ -177,8 +154,7 @@ def table_exists(table: str) -> bool:
 
 
 def validate_table(table: str):
-    """Validate table without returning the entire table list. This prevents large MCP responses."""
-
+    """Validate table without returning the entire table list."""
     if table_exists(table):
         return None
 
@@ -186,28 +162,23 @@ def validate_table(table: str):
 
 
 def get_actual_table_name(table: str) -> Optional[str]:
-    """Return the actual table name from MySQL. Useful for case-insensitive table matching."""
-
+    """Return the actual table name case-insensitively."""
     conn = get_conn()
     cur = conn.cursor()
 
     try:
         cur.execute(
             """
-            SELECT table_name
-            FROM information_schema.tables
-            WHERE table_schema = %s
-              AND LOWER(table_name) = LOWER(%s)
+            SELECT name
+            FROM sqlite_master
+            WHERE type = 'table'
+              AND LOWER(name) = LOWER(?)
+              AND name NOT LIKE 'sqlite_%'
             LIMIT 1
             """,
-            (
-                MYSQL_DATABASE,
-                table,
-            ),
+            (table,),
         )
-
         result = cur.fetchone()
-
         return result[0] if result else None
 
     finally:
@@ -216,42 +187,24 @@ def get_actual_table_name(table: str) -> Optional[str]:
 
 
 def get_table_fields_raw(table: str):
-    """Internal helper. Returns normalized field information from MySQL."""
-
+    """Internal helper. Returns normalized field metadata from SQLite PRAGMA table_info."""
     conn = get_conn()
-    cur = conn.cursor(dictionary=True)
+    cur = conn.cursor()
 
     try:
-        cur.execute(
-            """
-            SELECT
-                COLUMN_NAME,
-                DATA_TYPE,
-                IS_NULLABLE,
-                COLUMN_KEY
-            FROM information_schema.columns
-            WHERE table_schema = %s
-              AND table_name = %s
-            ORDER BY ORDINAL_POSITION
-            """,
-            (
-                MYSQL_DATABASE,
-                table,
-            ),
-        )
-
+        cur.execute(f'PRAGMA table_info("{table}")')
         rows = cur.fetchall()
 
-        # Normalize MySQL column names
         fields = []
-
         for row in rows:
+            # PRAGMA table_info columns: cid, name, type, notnull, dflt_value, pk
             fields.append(
                 {
-                    "column_name": row["COLUMN_NAME"],
-                    "data_type": row["DATA_TYPE"],
-                    "is_nullable": row["IS_NULLABLE"],
-                    "column_key": row["COLUMN_KEY"],
+                    "column_name": row["name"],
+                    "data_type": row["type"] or "TEXT",
+                    "is_nullable": "NO" if row["notnull"] else "YES",
+                    "column_key": "PRI" if row["pk"] else "",
+                    "default_value": row["dflt_value"],
                 }
             )
 
@@ -294,16 +247,16 @@ def build_filter_condition(
     data_type = field_info.get("data_type", "").lower()
 
     # Normalize boolean and tinyint flags to exact numeric matches
-    if data_type in ("tinyint", "boolean"):
+    if data_type in ("tinyint", "boolean", "int", "integer"):
         val_str = str(value).strip().lower()
         if val_str in ("1", "true", "yes", "active", "enabled"):
-            return f"`{field_name}` = %s", [1]
+            return f"`{field_name}` = ?", [1]
         if val_str in ("0", "false", "no", "inactive", "disabled"):
-            return f"`{field_name}` = %s", [0]
+            return f"`{field_name}` = ?", [0]
         if val_str.isdigit():
-            return f"`{field_name}` = %s", [int(val_str)]
+            return f"`{field_name}` = ?", [int(val_str)]
 
-    return f"`{field_name}` LIKE %s", [f"%{value}%"]
+    return f"`{field_name}` LIKE ?", [f"%{value}%"]
 
 
 @mcp.tool(
@@ -321,16 +274,16 @@ def count_tables():
         cur.execute(
             """
             SELECT COUNT(*)
-            FROM information_schema.tables
-            WHERE table_schema = %s
-            """,
-            (MYSQL_DATABASE,),
+            FROM sqlite_master
+            WHERE type = 'table'
+              AND name NOT LIKE 'sqlite_%'
+            """
         )
         total = cur.fetchone()[0]
 
         return success_response(
             {
-                "database": MYSQL_DATABASE,
+                "database": Path(SQLITE_DB_PATH).name,
                 "count": total,
             }
         )
@@ -355,8 +308,7 @@ def get_table_names(
     search: Optional[str] = None,
     limit: int = MAX_TABLE_LIMIT,
 ):
-    """Find tables in the database. Examples: get_table_names() get_table_names(search="employee") get_table_names(search="user")"""
-
+    """Find tables in the database. Examples: get_table_names() get_table_names(search="employee")"""
     conn = get_conn()
     cur = conn.cursor()
 
@@ -367,43 +319,36 @@ def get_table_names(
         )
 
         query = """
-            SELECT table_name
-            FROM information_schema.tables
-            WHERE table_schema = %s
+            SELECT name
+            FROM sqlite_master
+            WHERE type = 'table'
+              AND name NOT LIKE 'sqlite_%'
         """
-
-        params = [MYSQL_DATABASE]
+        params = []
 
         if search:
-            query += """
-                AND LOWER(table_name) LIKE LOWER(%s)
-            """
-
+            query += " AND LOWER(name) LIKE LOWER(?)"
             params.append(f"%{search}%")
 
-        query += """
-            ORDER BY table_name
-            LIMIT %s
-        """
-
+        query += " ORDER BY name LIMIT ?"
         params.append(limit)
 
-        cur.execute(query, params)
-
+        cur.execute(query, tuple(params))
         tables = [row[0] for row in cur.fetchall()]
 
         # Query total count matching criteria so the agent knows the true total table count
         count_query = """
             SELECT COUNT(*)
-            FROM information_schema.tables
-            WHERE table_schema = %s
+            FROM sqlite_master
+            WHERE type = 'table'
+              AND name NOT LIKE 'sqlite_%'
         """
-        count_params = [MYSQL_DATABASE]
+        count_params = []
         if search:
-            count_query += " AND LOWER(table_name) LIKE LOWER(%s)"
+            count_query += " AND LOWER(name) LIKE LOWER(?)"
             count_params.append(f"%{search}%")
 
-        cur.execute(count_query, count_params)
+        cur.execute(count_query, tuple(count_params))
         total_count = cur.fetchone()[0]
 
         return success_response(
@@ -419,7 +364,6 @@ def get_table_names(
             f"Error getting tables: {e}",
             file=sys.stderr,
         )
-
         return error_response(f"Error getting tables: {e}")
 
     finally:
@@ -435,7 +379,6 @@ def get_table_names(
 )
 def get_fields(table: str):
     """Get columns of a table."""
-
     try:
         actual_table = get_actual_table_name(table)
 
@@ -461,11 +404,60 @@ def get_fields(table: str):
 
     except Exception as e:
         print(
-            f"Error getting fields: {e}",
+            f"[ERROR] Error getting fields: {e}",
             file=sys.stderr,
         )
-
         return error_response(f"Error getting fields: {e}")
+
+
+@mcp.tool(
+    description=(
+        "Get detailed schema information for a database table including column names, data types, "
+        "nullability, primary key designations, default values, and total record count. "
+        "Use this when the user asks for table details, table structure, or schema definition."
+    )
+)
+def get_table_details(table: str):
+    """Return comprehensive table definition and row count."""
+    try:
+        actual_table = get_actual_table_name(table)
+        if not actual_table:
+            return error_response(f"Table '{table}' does not exist.")
+
+        raw_fields = get_table_fields_raw(actual_table)
+        columns = [
+            {
+                "name": field["column_name"],
+                "type": field["data_type"],
+                "nullable": field["is_nullable"] == "YES",
+                "primary_key": field["column_key"] == "PRI",
+                "default_value": field.get("default_value"),
+            }
+            for field in raw_fields
+            if field["column_name"].lower() not in SENSITIVE_FIELDS
+        ]
+
+        conn = get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(f'SELECT COUNT(*) FROM "{actual_table}"')
+            total_rows = cur.fetchone()[0]
+        finally:
+            cur.close()
+            conn.close()
+
+        return success_response(
+            {
+                "table": actual_table,
+                "total_rows": total_rows,
+                "total_columns": len(columns),
+                "columns": columns,
+            }
+        )
+
+    except Exception as e:
+        print(f"[ERROR] Error getting table details: {e}", file=sys.stderr)
+        return error_response(f"Error getting table details: {e}")
 
 
 @mcp.tool(
@@ -489,7 +481,6 @@ def list_records(
     desc: bool = False,
 ):
     try:
-
         actual_table = get_actual_table_name(table)
 
         if not actual_table:
@@ -505,7 +496,6 @@ def list_records(
         ]
 
         if fields:
-
             # Allow model to pass either a list ["col1", "col2"] or a string "col1" / "col1, col2"
             if isinstance(fields, str):
                 fields = [f.strip() for f in fields.split(",") if f.strip()]
@@ -514,7 +504,6 @@ def list_records(
             invalid_fields = []
 
             for requested_field in fields:
-
                 actual_field = find_field(
                     available_fields,
                     requested_field,
@@ -524,7 +513,6 @@ def list_records(
                     invalid_fields.append(requested_field)
                     continue
 
-                # Strip sensitive credentials so the LLM cannot see them
                 if actual_field.lower() in SENSITIVE_FIELDS:
                     continue
 
@@ -546,7 +534,6 @@ def list_records(
                 return error_response("No valid fields were selected.")
 
         else:
-
             # Default to compact summary columns, excluding heavy blobs, files, and verbose details
             selected_fields = [
                 field_data["column_name"]
@@ -568,7 +555,6 @@ def list_records(
         matched_field_info = None
 
         if field:
-
             matched_field_info = find_field_info(
                 available_fields,
                 field,
@@ -576,7 +562,7 @@ def list_records(
 
             if not matched_field_info:
                 return error_response(
-                    f"Field '{field}' not found " f"in table '{actual_table}'.",
+                    f"Field '{field}' not found in table '{actual_table}'.",
                     available_fields=[
                         field_name
                         for field_name in available_field_names
@@ -588,7 +574,7 @@ def list_records(
 
             if matched_field.lower() in SENSITIVE_FIELDS:
                 return error_response(
-                    f"Searching by field " f"'{matched_field}' is not allowed."
+                    f"Searching by field '{matched_field}' is not allowed."
                 )
 
         order_field = find_field(
@@ -597,23 +583,17 @@ def list_records(
         )
 
         if not order_field:
-
             if matched_field_info:
                 order_field = matched_field_info["column_name"]
-
             elif selected_fields:
                 order_field = selected_fields[0]
 
         direction = "DESC" if desc else "ASC"
-
         columns = ", ".join(f"`{column}`" for column in selected_fields)
-
-        query = f"SELECT {columns} " f"FROM `{actual_table}`"
-
+        query = f"SELECT {columns} FROM `{actual_table}`"
         params = []
 
         if matched_field_info and value is not None:
-
             where_sql, where_params = build_filter_condition(
                 matched_field_info,
                 value,
@@ -622,30 +602,26 @@ def list_records(
             params.extend(where_params)
 
         if order_field:
-
-            query += f" ORDER BY `{order_field}` " f"{direction}"
+            query += f" ORDER BY `{order_field}` {direction}"
 
         limit = min(max(limit or 1, 1), MAX_RECORD_LIMIT)
         offset = max(offset or 0, 0)
 
         # Request limit + 1 so we can check if there are more records without a separate COUNT(*)
-        query += " LIMIT %s OFFSET %s"
+        query += " LIMIT ? OFFSET ?"
         params.append(limit + 1)
         params.append(offset)
 
         conn = get_conn()
-        cur = conn.cursor(dictionary=True)
+        cur = conn.cursor()
 
         try:
             cur.execute(query, tuple(params))
-
             rows = cur.fetchall()
 
             has_more = len(rows) > limit
-
             rows = rows[:limit]
-            serialized_rows = [serialize_row(row) for row in rows]
-
+            serialized_rows = [serialize_row(dict(row)) for row in rows]
             next_offset = offset + limit if has_more else None
 
             return success_response(
@@ -665,12 +641,10 @@ def list_records(
             conn.close()
 
     except Exception as e:
-
         print(
             f"Error listing records: {e}",
             file=sys.stderr,
         )
-
         return error_response(f"Error listing records: {e}")
 
 
@@ -688,7 +662,6 @@ def count_records_table(
     value: Optional[Union[str, int, float, bool]] = None,
 ):
     """Count records in a table."""
-
     try:
         actual_table = get_actual_table_name(table)
 
@@ -696,11 +669,9 @@ def count_records_table(
             return error_response(f"Table '{table}' does not exist.")
 
         available_fields = get_table_fields_raw(actual_table)
-
         matched_field_info = None
 
         if field:
-
             matched_field_info = find_field_info(
                 available_fields,
                 field,
@@ -708,7 +679,7 @@ def count_records_table(
 
             if not matched_field_info:
                 return error_response(
-                    f"Field '{field}' not found " f"in table '{actual_table}'.",
+                    f"Field '{field}' not found in table '{actual_table}'.",
                     available_fields=[
                         item["column_name"]
                         for item in available_fields
@@ -720,37 +691,25 @@ def count_records_table(
 
             if matched_field.lower() in SENSITIVE_FIELDS:
                 return error_response(
-                    f"Searching by field " f"'{matched_field}' is not allowed."
+                    f"Searching by field '{matched_field}' is not allowed."
                 )
 
         if matched_field_info and value is not None:
-
             where_sql, where_params = build_filter_condition(
                 matched_field_info,
                 value,
             )
-            query = (
-                f"SELECT COUNT(*) "
-                f"FROM `{actual_table}` "
-                f"WHERE {where_sql}"
-            )
+            query = f"SELECT COUNT(*) FROM `{actual_table}` WHERE {where_sql}"
             params = where_params
-
         else:
-
-            query = f"SELECT COUNT(*) " f"FROM `{actual_table}`"
-
+            query = f"SELECT COUNT(*) FROM `{actual_table}`"
             params = []
 
         conn = get_conn()
         cur = conn.cursor()
 
         try:
-            cur.execute(
-                query,
-                params,
-            )
-
+            cur.execute(query, tuple(params))
             count = cur.fetchone()[0]
 
             return success_response(
@@ -765,12 +724,10 @@ def count_records_table(
             conn.close()
 
     except Exception as e:
-
         print(
             f"Error counting records: {e}",
             file=sys.stderr,
         )
-
         return error_response(f"Error counting records: {e}")
 
 
@@ -779,5 +736,4 @@ if __name__ == "__main__":
         f"MCP: http://{MCP_HOST}:{MCP_PORT}/mcp",
         file=sys.stderr,
     )
-
     mcp.run(transport="streamable-http")
