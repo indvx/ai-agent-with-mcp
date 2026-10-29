@@ -205,8 +205,6 @@ ai-agent-with-mcp/
 ├── script/
 │   ├── __init__.py
 │   └── seed.py                     # Database seeding (roles, permissions, admin user)
-├── static/
-│   └── logo.svg                    # API documentation logo
 ├── test/
 │   ├── __init__.py
 │   ├── conftest.py                 # Pytest configuration and dependency injection overrides

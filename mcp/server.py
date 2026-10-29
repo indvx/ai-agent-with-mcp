@@ -39,6 +39,48 @@ SENSITIVE_FIELDS = {
     "private_key",
 }
 
+# Heavy columns and data types excluded by default in list_records to save token budget
+HEAVY_FIELDS = {
+    "encrypted_blob",
+    "public_key",
+    "private_key",
+    "resume",
+    "profile",
+    "about_me",
+    "aadhar_card_file",
+    "pan_card_file",
+    "driving_license_file",
+    "reset_token",
+    "reset_expires_at",
+    "facebook_url",
+    "twitter_url",
+    "linkedin_url",
+    "instagram_url",
+    "upwork_profile_url",
+    "frontend_skills",
+    "backend_skills",
+    "address_line1",
+    "address_line2",
+    "bank_address",
+    "emergency_contact1",
+    "emergency_contact2",
+    "emergency_contact3",
+    "aadhar_card_number",
+    "pan_card_number",
+    "driving_license_number",
+    "account_number",
+    "ifsc_code",
+}
+
+HEAVY_DATA_TYPES = {
+    "blob",
+    "longblob",
+    "mediumblob",
+    "tinyblob",
+    "longtext",
+    "mediumtext",
+}
+
 _db_pool: Optional[MySQLConnectionPool] = None
 
 
@@ -65,7 +107,7 @@ def get_conn():
 
 
 def serialize_row(row: dict) -> dict:
-    """Converts database values into JSON-serializable primitives."""
+    """Converts database values into JSON-serializable primitives and truncates lengthy strings."""
     serialized = {}
     for key, val in row.items():
         if isinstance(val, (datetime, date)):
@@ -73,7 +115,11 @@ def serialize_row(row: dict) -> dict:
         elif isinstance(val, Decimal):
             serialized[key] = float(val)
         elif isinstance(val, bytes):
-            serialized[key] = val.decode("utf-8", errors="replace")
+            decoded = val.decode("utf-8", errors="replace")
+            serialized[key] = decoded[:120] + "..." if len(decoded) > 120 else decoded
+        elif isinstance(val, str) and len(val) > 120:
+            # Truncate lengthy text fields to keep context window compact
+            serialized[key] = val[:120] + "..."
         else:
             serialized[key] = val
     return serialized
@@ -338,24 +384,18 @@ def get_fields(table: str):
 
         fields = get_table_fields_raw(actual_table)
 
-        # Don't expose unnecessary information.
-        result = []
-
-        for field in fields:
-            result.append(
-                {
-                    "column_name": field["column_name"],
-                    "data_type": field["data_type"],
-                    "is_nullable": field["is_nullable"],
-                    "column_key": field["column_key"],
-                }
-            )
+        # Return lightweight column names to avoid bloating schema discovery tokens
+        field_names = [
+            field["column_name"]
+            for field in fields
+            if field["column_name"].lower() not in SENSITIVE_FIELDS
+        ]
 
         return success_response(
             {
                 "table": actual_table,
-                "count": len(result),
-                "fields": result,
+                "count": len(field_names),
+                "fields": field_names,
             }
         )
 
@@ -371,26 +411,19 @@ def get_fields(table: str):
 @mcp.tool(
     description=(
         "List records from a database table. "
-        "Never return more than 20 records in one call. "
+        "Returns up to 15 records per request. "
         "For boolean/tinyint status columns, 1 represents active/true and 0 represents inactive/false. "
-        "If the user asks for one, single, or only one record, "
-        "use limit=1. "
-        "If the user asks for a specific number, use that number "
-        "up to the maximum allowed limit. "
-        "For normal list requests, use limit=20. "
-        "For all/every records, use limit=20 and start with offset=0. "
-        "Continue requesting the next page using next_offset until "
-        "has_more=false. "
-        "Never use limit=1 unless the user explicitly asks for one record. "
-        "Never remove the LIMIT/OFFSET restriction."
+        "When querying wide tables, ALWAYS specify 'fields' with only key summary columns (e.g. id, first_name, last_name, email, role, status) to prevent context token overflow. "
+        "Never use limit > 20. "
+        "Do not request all pages in a single turn unless explicitly requested by the user."
     )
 )
 def list_records(
     table: str,
     field: Optional[str] = None,
     value: Optional[Union[str, int, float, bool]] = None,
-    fields: Optional[list[str]] = None,
-    limit: int = 20,
+    fields: Optional[Union[list[str], str]] = None,
+    limit: int = 15,
     offset: int = 0,
     desc: bool = False,
 ):
@@ -411,6 +444,10 @@ def list_records(
         ]
 
         if fields:
+
+            # Allow model to pass either a list ["col1", "col2"] or a string "col1" / "col1, col2"
+            if isinstance(fields, str):
+                fields = [f.strip() for f in fields.split(",") if f.strip()]
 
             selected_fields = []
             invalid_fields = []
@@ -449,12 +486,23 @@ def list_records(
 
         else:
 
-            # Default to all non-sensitive table columns
+            # Default to compact summary columns, excluding heavy blobs, files, and verbose details
             selected_fields = [
-                field_name
-                for field_name in available_field_names
-                if field_name.lower() not in SENSITIVE_FIELDS
+                field_data["column_name"]
+                for field_data in available_fields
+                if field_data["column_name"].lower() not in SENSITIVE_FIELDS
+                and field_data["column_name"].lower() not in HEAVY_FIELDS
+                and field_data["data_type"].lower() not in HEAVY_DATA_TYPES
+                and not field_data["column_name"].lower().endswith(("_file", "_blob", "_image", "_token"))
             ]
+
+            # Fallback to all non-sensitive columns if everything was filtered out
+            if not selected_fields:
+                selected_fields = [
+                    field_data["column_name"]
+                    for field_data in available_fields
+                    if field_data["column_name"].lower() not in SENSITIVE_FIELDS
+                ]
 
         matched_field_info = None
 
