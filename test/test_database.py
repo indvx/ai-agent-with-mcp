@@ -137,3 +137,42 @@ def test_get_table_details_not_found(tmp_path):
         response = client.get("/database/tables/nonexistent")
         assert response.status_code == 404
         assert "does not exist" in response.json()["detail"]
+
+
+def test_import_database_mysql_dump(tmp_path):
+    test_db = tmp_path / "mysql_imported.db"
+    mysql_dump = (
+        b"/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;\n"
+        b"DROP TABLE IF EXISTS `cities`;\n"
+        b"CREATE TABLE `cities` (\n"
+        b"  `id` int NOT NULL AUTO_INCREMENT,\n"
+        b"  `name` text COLLATE utf8mb4_turkish_ci NOT NULL,\n"
+        b"  `stateId` int NOT NULL,\n"
+        b"  PRIMARY KEY (`id`),\n"
+        b"  KEY `stateId` (`stateId`)\n"
+        b") ENGINE=InnoDB AUTO_INCREMENT=150574 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_turkish_ci;\n"
+        b"LOCK TABLES `cities` WRITE;\n"
+        b"INSERT INTO `cities` VALUES (1,'Ashk\\\'asham',1),(2,'Cote D\\\'Ivoire',2);\n"
+        b"UNLOCK TABLES;\n"
+    )
+
+    with patch("os.getenv", return_value=str(test_db)):
+        response = client.post(
+            "/database/import",
+            files={"file": ("world.sql", io.BytesIO(mysql_dump), "application/sql")},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "success"
+        assert "cities" in data["tables"]
+
+        # Verify data inserted cleanly with unescaped single quotes
+        conn = sqlite3.connect(test_db)
+        cur = conn.cursor()
+        cur.execute("SELECT id, name, stateId FROM cities ORDER BY id")
+        rows = cur.fetchall()
+        conn.close()
+
+        assert len(rows) == 2
+        assert rows[0] == (1, "Ashk'asham", 1)
+        assert rows[1] == (2, "Cote D'Ivoire", 2)

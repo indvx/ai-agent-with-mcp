@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 # Load the local mcp/server.py module directly to avoid shadowing by the installed 'mcp' SDK package
-_server_path = Path(__file__).parent.parent / "mcp" / "server.py"
+_server_path = Path(__file__).parent.parent / "mcp_module" / "server.py"
 _spec = importlib.util.spec_from_file_location("local_mcp_server", _server_path)
 mcp_server = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(mcp_server)
