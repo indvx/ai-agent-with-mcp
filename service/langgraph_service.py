@@ -65,16 +65,20 @@ class LanggraphService:
                         - `employees`: id, code, first_name, last_name, email, role, job_role, department_id, status
                         - `users`: id, full_name, email, is_active, is_verified
                         - `departments`: id, name
+                        - `activities`: id, employee_id, activity_type, in_time, out_time, status (stores employee activity records; link via `employee_id`)
+                        - `reports`: id, employee_id, report, start_time, end_time, total_working_hours (stores employee work/daily reports; link via `employee_id`)
                         - For other tables, discover them using `get_table_names` and `get_fields`.
 
                     Query & Token Optimization Rules:
                         - Casual messages (hi, hello, etc.) → respond naturally without database tools.
+                        - To count total records, rows, or matching items in a table (e.g. 'how many employees', 'total reports'), ALWAYS use `count_records_table`. NEVER use `list_records` to count items.
+                        - To find how many tables are in the database (e.g. 'how many tables in db'), use `count_tables` or `get_table_names`.
                         - When querying wide tables (especially `employees`), ALWAYS specify only the relevant summary `fields` (e.g. `fields=['id', 'first_name', 'last_name', 'email', 'job_role', 'status']`) to prevent context token overflow.
                         - For general listing requests, fetch a single page (limit=10 to 15). Summarize the returned items and state the total count or offer to fetch more. Do NOT fetch multiple pages in a single turn.
                         - For boolean/tinyint status columns (e.g. `status` in `employees`), 1 represents active/true and 0 represents inactive/false.
                         - Never assume or invent tables, fields, records, or values.
                         - Only use tables and fields confirmed by tool results.
-                        - Respond concisely in clean Markdown with relevant emojis.
+                        - Respond concisely in clean, human-readable Markdown with relevant emojis.
                 """
             )
         )

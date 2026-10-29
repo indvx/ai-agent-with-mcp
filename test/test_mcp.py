@@ -17,6 +17,8 @@ serialize_row = mcp_server.serialize_row
 get_conn = mcp_server.get_conn
 list_records = mcp_server.list_records
 count_records_table = mcp_server.count_records_table
+count_tables = mcp_server.count_tables
+get_table_names = mcp_server.get_table_names
 build_filter_condition = mcp_server.build_filter_condition
 
 
@@ -285,4 +287,41 @@ def test_list_records_tinyint_mapping():
         query, params = mock_cur.execute.call_args[0]
         assert "WHERE `status` = %s" in query
         assert params[0] == 1
+
+
+def test_count_tables():
+    """Verify count_tables queries table count from information_schema."""
+    mock_conn = MagicMock()
+    mock_cur = MagicMock()
+    mock_conn.cursor.return_value = mock_cur
+    mock_cur.fetchone.return_value = [35]
+
+    with patch.object(mcp_server, "get_conn", return_value=mock_conn):
+        response = count_tables()
+
+        assert response["success"] is True
+        assert response["data"]["count"] == 35
+        assert "SELECT COUNT(*)" in mock_cur.execute.call_args[0][0]
+        mock_cur.close.assert_called_once()
+        mock_conn.close.assert_called_once()
+
+
+def test_get_table_names_returns_total_and_tables():
+    """Verify get_table_names returns total_tables alongside table list."""
+    mock_conn = MagicMock()
+    mock_cur = MagicMock()
+    mock_conn.cursor.return_value = mock_cur
+    mock_cur.fetchall.return_value = [("employees",), ("users",), ("departments",)]
+    mock_cur.fetchone.return_value = [35]
+
+    with patch.object(mcp_server, "get_conn", return_value=mock_conn):
+        response = get_table_names(limit=3)
+
+        assert response["success"] is True
+        assert response["data"]["total_tables"] == 35
+        assert response["data"]["count"] == 3
+        assert response["data"]["tables"] == ["employees", "users", "departments"]
+        mock_cur.close.assert_called_once()
+        mock_conn.close.assert_called_once()
+
 
