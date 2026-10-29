@@ -69,6 +69,8 @@ class LanggraphService:
 
                     Query & Token Optimization Rules:
                         - Casual messages (hi, hello, etc.) → respond naturally without database tools.
+                        - To count total records, rows, or matching items in a table (e.g. 'how many employees', 'total reports'), ALWAYS use `count_records_table`. NEVER use `list_records` to count items.
+                        - To find how many tables are in the database (e.g. 'how many tables in db'), use `count_tables` or `get_table_names`.
                         - When querying wide tables (especially `employees`), ALWAYS specify only the relevant summary `fields` (e.g. `fields=['id', 'first_name', 'last_name', 'email', 'job_role', 'status']`) to prevent context token overflow.
                         - For general listing requests, fetch a single page (limit=10 to 15). Summarize the returned items and state the total count or offer to fetch more. Do NOT fetch multiple pages in a single turn.
                         - For boolean/tinyint status columns (e.g. `status` in `employees`), 1 represents active/true and 0 represents inactive/false.

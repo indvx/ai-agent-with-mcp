@@ -25,7 +25,7 @@ mcp = FastMCP(
 
 
 MAX_RECORD_LIMIT = 20
-MAX_TABLE_LIMIT = 20
+MAX_TABLE_LIMIT = 100
 
 # Never expose sensitive columns like credentials or tokens to the LLM agent
 SENSITIVE_FIELDS = {
@@ -301,9 +301,47 @@ def build_filter_condition(
 
 @mcp.tool(
     description=(
+        "Count total tables in the database. "
+        "ALWAYS use this tool when the user asks how many tables are in the database."
+    )
+)
+def count_tables():
+    """Count total tables in the database."""
+    conn = get_conn()
+    cur = conn.cursor()
+
+    try:
+        cur.execute(
+            """
+            SELECT COUNT(*)
+            FROM information_schema.tables
+            WHERE table_schema = %s
+            """,
+            (MYSQL_DATABASE,),
+        )
+        total = cur.fetchone()[0]
+
+        return success_response(
+            {
+                "database": MYSQL_DATABASE,
+                "count": total,
+            }
+        )
+
+    except Exception as e:
+        print(f"Error counting tables: {e}", file=sys.stderr)
+        return error_response(f"Error counting tables: {e}")
+
+    finally:
+        cur.close()
+        conn.close()
+
+
+@mcp.tool(
+    description=(
         "Find database tables by name. "
-        "Use this when the correct table is unknown. "
-        "The search parameter is optional."
+        "Returns table names and total table count. "
+        "Use this when discovering tables or searching for specific tables by name."
     )
 )
 def get_table_names(
@@ -347,8 +385,23 @@ def get_table_names(
 
         tables = [row[0] for row in cur.fetchall()]
 
+        # Query total count matching criteria so the agent knows the true total table count
+        count_query = """
+            SELECT COUNT(*)
+            FROM information_schema.tables
+            WHERE table_schema = %s
+        """
+        count_params = [MYSQL_DATABASE]
+        if search:
+            count_query += " AND LOWER(table_name) LIKE LOWER(%s)"
+            count_params.append(f"%{search}%")
+
+        cur.execute(count_query, count_params)
+        total_count = cur.fetchone()[0]
+
         return success_response(
             {
+                "total_tables": total_count,
                 "count": len(tables),
                 "tables": tables,
             }
@@ -415,7 +468,8 @@ def get_fields(table: str):
         "For boolean/tinyint status columns, 1 represents active/true and 0 represents inactive/false. "
         "When querying wide tables, ALWAYS specify 'fields' with only key summary columns (e.g. id, first_name, last_name, email, role, status) to prevent context token overflow. "
         "Never use limit > 20. "
-        "Do not request all pages in a single turn unless explicitly requested by the user."
+        "Do not request all pages in a single turn unless explicitly requested by the user. "
+        "IMPORTANT: Do NOT use list_records to count how many records or rows exist in a table; use count_records_table instead. The 'count' field here is only the count of records returned in this page, not total table rows."
     )
 )
 def list_records(
@@ -615,7 +669,8 @@ def list_records(
 
 @mcp.tool(
     description=(
-        "Count records in a database table. "
+        "Count total records or rows in a database table. "
+        "ALWAYS use this tool when the user asks 'how many records', 'how many rows', 'total count', or to count matching items in a table. "
         "Use field and value when counting matching records. "
         "For boolean/tinyint status columns, 1 represents active/true and 0 represents inactive/false."
     )
