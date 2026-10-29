@@ -65,6 +65,8 @@ class LanggraphService:
                         - `employees`: id, code, first_name, last_name, email, role, job_role, department_id, status
                         - `users`: id, full_name, email, is_active, is_verified
                         - `departments`: id, name
+                        - `activities`: id, employee_id, activity_type, in_time, out_time, status (stores employee activity records; link via `employee_id`)
+                        - `reports`: id, employee_id, report, start_time, end_time, total_working_hours (stores employee work/daily reports; link via `employee_id`)
                         - For other tables, discover them using `get_table_names` and `get_fields`.
 
                     Query & Token Optimization Rules:
@@ -74,7 +76,7 @@ class LanggraphService:
                         - For boolean/tinyint status columns (e.g. `status` in `employees`), 1 represents active/true and 0 represents inactive/false.
                         - Never assume or invent tables, fields, records, or values.
                         - Only use tables and fields confirmed by tool results.
-                        - Respond concisely in clean Markdown with relevant emojis.
+                        - Respond concisely in clean, human-readable Markdown with relevant emojis.
                 """
             )
         )
