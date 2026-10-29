@@ -1,6 +1,6 @@
 import sys
 import os
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Optional, Union
 
@@ -107,19 +107,26 @@ def get_conn():
 
 
 def serialize_row(row: dict) -> dict:
-    """Converts database values into JSON-serializable primitives and truncates lengthy strings."""
+    """Converts database values into JSON-serializable primitives and handles length limits."""
     serialized = {}
     for key, val in row.items():
         if isinstance(val, (datetime, date)):
             serialized[key] = val.isoformat()
+        elif isinstance(val, timedelta):
+            # Format timedelta (MySQL TIME columns) as HH:MM:SS
+            total_seconds = int(val.total_seconds())
+            hours, remainder = divmod(total_seconds, 3600)
+            minutes, seconds = divmod(remainder, 60)
+            serialized[key] = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
         elif isinstance(val, Decimal):
             serialized[key] = float(val)
         elif isinstance(val, bytes):
             decoded = val.decode("utf-8", errors="replace")
             serialized[key] = decoded[:120] + "..." if len(decoded) > 120 else decoded
-        elif isinstance(val, str) and len(val) > 120:
-            # Truncate lengthy text fields to keep context window compact
-            serialized[key] = val[:120] + "..."
+        elif isinstance(val, str):
+            # Preserve rich text bodies (reports, messages, descriptions) up to 2000 chars; truncate metadata at 120
+            max_len = 2000 if key.lower() in ("report", "content", "body", "message", "text", "notes", "note", "description") else 120
+            serialized[key] = val[:max_len] + "..." if len(val) > max_len else val
         else:
             serialized[key] = val
     return serialized
