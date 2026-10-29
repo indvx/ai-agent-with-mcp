@@ -71,6 +71,7 @@ class LanggraphService:
                         - Casual messages (hi, hello, etc.) → respond naturally without database tools.
                         - When querying wide tables (especially `employees`), ALWAYS specify only the relevant summary `fields` (e.g. `fields=['id', 'first_name', 'last_name', 'email', 'job_role', 'status']`) to prevent context token overflow.
                         - For general listing requests, fetch a single page (limit=10 to 15). Summarize the returned items and state the total count or offer to fetch more. Do NOT fetch multiple pages in a single turn.
+                        - For boolean/tinyint status columns (e.g. `status` in `employees`), 1 represents active/true and 0 represents inactive/false.
                         - Never assume or invent tables, fields, records, or values.
                         - Only use tables and fields confirmed by tool results.
                         - Respond concisely in clean Markdown with relevant emojis.

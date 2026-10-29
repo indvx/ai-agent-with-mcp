@@ -17,6 +17,7 @@ serialize_row = mcp_server.serialize_row
 get_conn = mcp_server.get_conn
 list_records = mcp_server.list_records
 count_records_table = mcp_server.count_records_table
+build_filter_condition = mcp_server.build_filter_condition
 
 
 def test_serialize_row_primitives():
@@ -202,4 +203,86 @@ def test_list_records_handles_string_and_comma_separated_fields():
         q2 = mock_cur.execute.call_args[0][0]
         assert "`id`" in q2 and "`department_id`" in q2
 
+
+def test_build_filter_condition_tinyint():
+    """Verify boolean and status strings map to integer flags for tinyint/boolean columns."""
+    tinyint_col = {"column_name": "status", "data_type": "tinyint"}
+    sql, params = build_filter_condition(tinyint_col, "active")
+    assert sql == "`status` = %s"
+    assert params == [1]
+
+    sql, params = build_filter_condition(tinyint_col, "inactive")
+    assert sql == "`status` = %s"
+    assert params == [0]
+
+    sql, params = build_filter_condition(tinyint_col, 1)
+    assert sql == "`status` = %s"
+    assert params == [1]
+
+    sql, params = build_filter_condition(tinyint_col, "0")
+    assert sql == "`status` = %s"
+    assert params == [0]
+
+    # Varchar columns should retain LIKE text matching
+    varchar_col = {"column_name": "status", "data_type": "varchar"}
+    sql, params = build_filter_condition(varchar_col, "active")
+    assert sql == "`status` LIKE %s"
+    assert params == ["%active%"]
+
+
+def test_count_records_table_tinyint_mapping():
+    """Verify count_records_table converts 'active' to numeric 1 when filtering tinyint columns."""
+    mock_conn = MagicMock()
+    mock_cur = MagicMock()
+    mock_conn.cursor.return_value = mock_cur
+    mock_cur.fetchone.return_value = [32]
+
+    mock_fields = [
+        {"column_name": "id", "data_type": "int", "is_nullable": "NO", "column_key": "PRI"},
+        {"column_name": "status", "data_type": "tinyint", "is_nullable": "YES", "column_key": ""},
+    ]
+
+    with patch.object(mcp_server, "get_actual_table_name", return_value="employees"), \
+         patch.object(mcp_server, "get_table_fields_raw", return_value=mock_fields), \
+         patch.object(mcp_server, "get_conn", return_value=mock_conn):
+
+        response = count_records_table(table="employees", field="status", value="active")
+
+        assert response["success"] is True
+        assert response["data"]["table"] == "employees"
+        assert response["data"]["count"] == 32
+
+        mock_cur.execute.assert_called_once_with(
+            "SELECT COUNT(*) FROM `employees` WHERE `status` = %s",
+            [1],
+        )
+        mock_cur.close.assert_called_once()
+        mock_conn.close.assert_called_once()
+
+
+def test_list_records_tinyint_mapping():
+    """Verify list_records converts 'active' to numeric 1 for tinyint column filter."""
+    mock_conn = MagicMock()
+    mock_cur = MagicMock()
+    mock_conn.cursor.return_value = mock_cur
+    mock_cur.fetchall.return_value = [
+        {"id": 1, "status": 1},
+    ]
+
+    mock_fields = [
+        {"column_name": "id", "data_type": "int", "is_nullable": "NO", "column_key": "PRI"},
+        {"column_name": "status", "data_type": "tinyint", "is_nullable": "YES", "column_key": ""},
+    ]
+
+    with patch.object(mcp_server, "get_actual_table_name", return_value="employees"), \
+         patch.object(mcp_server, "get_table_fields_raw", return_value=mock_fields), \
+         patch.object(mcp_server, "get_conn", return_value=mock_conn):
+
+        response = list_records(table="employees", field="status", value="active")
+
+        assert response["success"] is True
+        assert response["data"]["count"] == 1
+        query, params = mock_cur.execute.call_args[0]
+        assert "WHERE `status` = %s" in query
+        assert params[0] == 1
 
