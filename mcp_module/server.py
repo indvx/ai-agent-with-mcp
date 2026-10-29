@@ -774,10 +774,4 @@ def count_records_table(
         return error_response(f"Error counting records: {e}")
 
 
-if __name__ == "__main__":
-    print(
-        f"MCP: http://{MCP_HOST}:{MCP_PORT}/mcp",
-        file=sys.stderr,
-    )
-
-    mcp.run(transport="streamable-http")
+app = mcp.streamable_http_app()
