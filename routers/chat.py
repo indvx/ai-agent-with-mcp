@@ -29,21 +29,6 @@ async def generate_stream_data(query: str):
         yield f"\n[Error: {e}]"
 
 
-@router.post("/")
-@limiter.limit("5/minute")
-async def chat(query: Chat, request: Request):
-    """Run the agent and return its completed response."""
-    await service.initialize()
-    graph = service.build_pipeline()
-
-    response = await graph.ainvoke(
-        {
-            "question": query.query,
-        }
-    )
-    return response
-
-
 @router.post("/stream")
 @limiter.limit("5/minute")
 async def chat_stream(query: Chat, request: Request):
