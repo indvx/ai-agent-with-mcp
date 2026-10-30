@@ -1,43 +1,45 @@
 # AI Agent with MCP (SQLite Edition)
 
-An intelligent AI agent powered by LangGraph and Model Context Protocol (MCP) that provides a FastAPI chat interface, pure SQLite database operations, and database import capabilities.
+An intelligent AI agent powered by LangGraph and the Model Context Protocol (MCP) providing a FastAPI streaming chat interface, dynamic SQLite database management, and safe database inspection tools.
 
 ## Overview
 
-This project provides an AI agent system for database exploration and interaction:
-- **LangGraph**: Orchestrates stateful, multi-step conversation and tool calling workflows.
-- **Model Context Protocol (MCP)**: Standardized protocol providing safe database inspection and query tools to the LLM.
-- **FastAPI**: Modern asynchronous REST API framework.
-- **SQLite**: Self-contained, zero-configuration local database backend.
-- **Database Import**: Upload SQLite files (`.db`, `.sqlite`) or SQL scripts (`.sql`) directly via REST API or MCP tool.
-- **OpenAI API**: Advanced GPT models for conversation, report generation, and data queries.
+This project provides an AI agent system for database exploration, querying, and multi-database management:
+- **LangGraph**: Orchestrates agent workflows, tool execution, and token usage accounting.
+- **Model Context Protocol (MCP)**: Implements FastMCP over HTTP streaming to expose safe inspection and retrieval tools to the LLM.
+- **FastAPI**: REST API framework serving streaming chat endpoints and database management APIs.
+- **SQLite Database Management**: Multi-database catalog system storing database metadata in `app.db` and active database files in `databases/`.
+- **Database Import**: Upload SQLite files (`.db`, `.sqlite`, `.sqlite3`) or SQL dumps (`.sql`) with automatic SQL dialect sanitization.
+- **Rate Limiting**: Protects streaming endpoints using SlowAPI.
 
-## Architecture
+## System Architecture
 
-```
+```text
 FastAPI Application (Port 8000)
-    ├── /chat endpoints
-    │   ├── POST / (AI agent chat with thread persistence)
-    │   └── POST /stream (streaming chat response)
-    ├── /database endpoints
-    │   ├── GET /info (active database metadata and table list)
+    ├── /chat
+    │   └── POST /stream (streaming chat response with tool execution via SSE, rate-limited)
+    ├── /database
+    │   ├── POST /import (upload .db, .sqlite, .sqlite3, or .sql files)
+    │   ├── GET /list (list all registered databases with active status)
+    │   ├── PUT /{db_identifier} (activate or toggle default database)
+    │   ├── DELETE /{db_identifier} (delete database record and physical file)
+    │   ├── GET /info (active database metadata and table summary)
     │   ├── GET /tables (all tables with row and column counts)
-    │   ├── GET /tables/{table_name} (detailed table schema and column types)
-    │   └── POST /import (upload .db, .sqlite, or .sql files)
+    │   └── GET /tables/{table_name} (detailed schema, column types, and constraints)
     ├── GET / (welcome message)
     └── GET /health (health check)
 
-MCP Server (Port 8001 - FastMCP)
-    ├── count_tables (count total tables in active SQLite database)
-    ├── get_table_names (search and list tables with pagination)
-    ├── get_table_details (detailed table definition with columns, types, and row count)
-    ├── count_fields (count columns in a table)
-    ├── get_fields (list column names excluding sensitive fields)
-    ├── count_records_table (count records with optional column filtering)
-    └── list_records (query table records with pagination and sorting)
+MCP Server (Port 8001 - FastMCP HTTP Streaming)
+    ├── count_tables (count total non-system tables in active database)
+    ├── get_table_names (search and list table names)
+    ├── get_fields (list column names excluding sensitive credential fields)
+    ├── get_table_details (detailed table definition with columns, types, nullability, PK, and row count)
+    ├── list_records (query table records with field selection, pagination, and sorting)
+    └── count_records_table (count matching records with column filtering)
 
-Database Layer
-    └── app.db (SQLite database managed via standard library sqlite3)
+Storage Layer
+    ├── app.db (system catalog tracking database metadata and status)
+    └── databases/ (directory holding individual SQLite database files)
 ```
 
 ## Tech Stack
@@ -52,79 +54,98 @@ Database Layer
 - SlowAPI 0.1.9
 - Pytest 9.0.3
 
-## Installation
+## Installation & Setup
 
 ### Prerequisites
 - Python 3.11 or higher
 - OpenAI API key
 
-### Setup
+### 1. Setup Environment
+```bash
+cd ai-agent-with-mcp
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+pip install -r requirements.txt
+```
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/indvx/ai-agent-with-mcp.git
-   cd ai-agent-with-mcp
-   ```
+### 2. Environment Variables
+Copy the example configuration file:
+```bash
+cp .env-example .env
+```
 
-2. **Create and activate a virtual environment**
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
-
-3. **Install dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. **Configure environment variables**
-   ```bash
-   cp .env-example .env
-   ```
-   Edit `.env` with your settings:
-   ```env
-   MCP_HOST="0.0.0.0"
-   MCP_PORT="8001"
-   MCP_URL="http://localhost:8001/mcp"
-   SQLITE_DB_PATH="app.db"
-   OPENAI_API_KEY="your-openai-api-key"
-   OPENAI_MODEL="gpt-4o"
-   ```
+Configure `.env` with your values:
+```env
+MCP_HOST="0.0.0.0"
+MCP_PORT="8001"
+MCP_URL="http://localhost:8001/mcp"
+SQLITE_DB_PATH="app.db"
+OPENAI_API_KEY="your-openai-api-key"
+OPENAI_MODEL="gpt-4o"
+```
 
 ## Running the Application
 
 ### 1. Start the MCP Server
-In one terminal, start the MCP server:
+In the first terminal, start the FastMCP tool server using Uvicorn:
 ```bash
-python -m mcp.server
+uvicorn mcp_module.server:app --port 8001 --reload
 ```
-The server will run on `http://0.0.0.0:8001`.
+The MCP server starts listening on `http://0.0.0.0:8001/mcp`.
 
-### 2. Start the FastAPI App
-In another terminal, start the REST API:
+### 2. Start the FastAPI Application
+In a second terminal, start the API server:
 ```bash
 uvicorn main:app --reload --port 8000
 ```
-- API Documentation: `http://localhost:8000/docs`
-- Health check: `http://localhost:8000/health`
+- Interactive API Docs: `http://localhost:8000/docs`
+- Health Check: `http://localhost:8000/health`
 
-## Database Import & Inspection
+## API Reference & Examples
 
-### Uploading a Database via REST API
-Import a `.db`, `.sqlite`, or `.sql` dump directly:
+### Chat Streaming Endpoint
+
+Submit natural language database queries via Server-Sent Events (SSE):
 ```bash
-# Upload an SQL dump
-curl -X POST "http://localhost:8000/database/import" \
-  -F "file=@dump.sql"
-
-# Upload an SQLite database file
-curl -X POST "http://localhost:8000/database/import" \
-  -F "file=@company.db"
+curl -N -X POST "http://localhost:8000/chat/stream" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "How many tables are there in the database?"}'
 ```
 
-### Inspecting Active Database & Tables
+### Database Management Endpoints
+
+#### 1. Import a Database or SQL Dump
 ```bash
-# Check active database info
+# Upload an SQLite file (.db, .sqlite)
+curl -X POST "http://localhost:8000/database/import?is_active=true" \
+  -F "file=@sample.db"
+
+# Upload an SQL dump file (.sql)
+curl -X POST "http://localhost:8000/database/import?is_active=true" \
+  -F "file=@schema.sql"
+```
+
+#### 2. List Registered Databases
+```bash
+curl "http://localhost:8000/database/list"
+```
+
+#### 3. Set Active Database
+```bash
+curl -X PUT "http://localhost:8000/database/sample" \
+  -H "Content-Type: application/json" \
+  -d '{"status": 1}'
+```
+
+#### 4. Delete Database
+```bash
+curl -X DELETE "http://localhost:8000/database/sample"
+```
+
+### Database Inspection Endpoints
+
+```bash
+# Get active database information and table summary
 curl "http://localhost:8000/database/info"
 
 # List all tables with row and column counts
@@ -136,11 +157,11 @@ curl "http://localhost:8000/database/tables/employees"
 
 ## Running Tests
 
-Run the full pytest suite:
+Execute the automated test suite with pytest:
 ```bash
 pytest test/
 ```
 
 ## License
 
-This project is open source and available under the MIT License.
+This project is licensed under the MIT License.
