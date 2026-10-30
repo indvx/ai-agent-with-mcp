@@ -1,15 +1,15 @@
 from typing import TypedDict, Optional, Any
 from langgraph.graph import StateGraph, START, END
-from langchain_openai import ChatOpenAI
+from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 from dotenv import load_dotenv
 import os, sys
 
 load_dotenv()
 
-
 from langchain.agents import create_agent
 from langchain_mcp_adapters.client import MultiServerMCPClient
+from service.llm_service import LLMService
 
 
 # Defines the data passed between LangGraph nodes during a chat request
@@ -20,10 +20,8 @@ class MainState(TypedDict):
     tool_calls: Optional[list]
 
 
-# Shared OpenAI chat model instance for the AI agent
-llm = ChatOpenAI(
-    model=os.getenv("OPENAI_MODEL", "gpt-3.5-turbo"), temperature=0, verbose=True
-)
+# Shared chat model instance for the AI agent
+llm = LLMService().get_chat_model()
 
 
 class LanggraphService:
