@@ -103,7 +103,7 @@ def update_database(
 
         if status is not None:
             if status == 1:
-                cur.execute("UPDATE databases SET status = 0 WHERE is_default = 0")
+                cur.execute("UPDATE databases SET status = 0")
             cur.execute("UPDATE databases SET status = ? WHERE id = ?", (status, target_id))
 
         conn.commit()

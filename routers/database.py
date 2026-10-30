@@ -164,12 +164,12 @@ async def list_databases():
     }
 
 @router.put("/{db_identifier}")
-async def select_active_database(
+async def update_database_status_or_default(
     db_identifier: str, database: Optional[UpdateDatabase] = None
 ):
     """Updates database active status or default flags in registry."""
     is_default = database.is_default if database else None
-    status_val = database.status if database else 1
+    status_val = database.status if database else 0
     updated = update_database(db_identifier, is_default=is_default, status=status_val)
     if not updated:
         raise HTTPException(
