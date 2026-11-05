@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MCP Chat Assistant</title>
+  <style>
+    :root {
+      --bg-primary: #0f172a;
+      --bg-secondary: #1e293b;
+      --bg-card: #334155;
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --accent: #3b82f6;
+      --accent-hover: #2563eb;
+      --user-bubble: #2563eb;
+      --agent-bubble: #1e293b;
+      --border-color: #334155;
+      --code-bg: #090d16;
+      --error-color: #ef4444;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background-color: var(--bg-primary);
+      color: var(--text-primary);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      background-color: var(--bg-secondary);
+      border-bottom: 1px solid var(--border-color);
+      padding: 1rem 1.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .brand-icon {
+      width: 2rem;
+      height: 2rem;
+      border-radius: 0.5rem;
+      background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      color: #fff;
+    }
+
+    .brand-info h1 {
+      font-size: 1.1rem;
+      font-weight: 600;
+    }
+
+    .brand-info p {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 0.5rem;
+    }
+
+    .btn-secondary {
+      background-color: transparent;
+      border: 1px solid var(--border-color);
+      color: var(--text-secondary);
+      padding: 0.4rem 0.8rem;
+      border-radius: 0.375rem;
+      font-size: 0.8rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-secondary:hover {
+      background-color: var(--bg-card);
+      color: var(--text-primary);
+    }
+
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      max-width: 900px;
+      width: 100%;
+      margin: 0 auto;
+      height: calc(100vh - 65px);
+      padding: 1rem;
+      overflow: hidden;
+    }
+
+    #chat-window {
+      flex: 1;
+      overflow-y: auto;
+      padding-right: 0.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    #chat-window::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    #chat-window::-webkit-scrollbar-thumb {
+      background: var(--border-color);
+      border-radius: 3px;
+    }
+
+    .welcome-container {
+      margin: auto;
+      text-align: center;
+      max-width: 520px;
+      padding: 2rem 1rem;
+    }
+
+    .welcome-container h2 {
+      font-size: 1.5rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .welcome-container p {
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+      line-height: 1.5;
+      margin-bottom: 1.5rem;
+    }
+
+    .suggestion-chips {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .chip-btn {
+      background-color: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      color: var(--text-primary);
+      padding: 0.65rem 1rem;
+      border-radius: 0.5rem;
+      text-align: left;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: background 0.2s, border-color 0.2s;
+    }
+
+    .chip-btn:hover {
+      background-color: var(--bg-card);
+      border-color: var(--accent);
+    }
+
+    .message-row {
+      display: flex;
+      width: 100%;
+    }
+
+    .message-row.user {
+      justify-content: flex-end;
+    }
+
+    .message-row.agent {
+      justify-content: flex-start;
+    }
+
+    .message-bubble {
+      max-width: 80%;
+      padding: 0.85rem 1.1rem;
+      border-radius: 0.75rem;
+      line-height: 1.55;
+      font-size: 0.92rem;
+      word-break: break-word;
+    }
+
+    .message-row.user .message-bubble {
+      background-color: var(--user-bubble);
+      color: #fff;
+      border-bottom-right-radius: 0.2rem;
+    }
+
+    .message-row.agent .message-bubble {
+      background-color: var(--agent-bubble);
+      color: var(--text-primary);
+      border: 1px solid var(--border-color);
+      border-bottom-left-radius: 0.2rem;
+    }
+
+    .message-bubble pre {
+      background-color: var(--code-bg);
+      padding: 0.75rem;
+      border-radius: 0.375rem;
+      overflow-x: auto;
+      margin: 0.5rem 0;
+      font-size: 0.85rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    .message-bubble code {
+      background-color: var(--code-bg);
+      padding: 0.15rem 0.35rem;
+      border-radius: 0.25rem;
+      font-size: 0.85rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    .typing-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.5rem 0.75rem;
+    }
+
+    .typing-indicator span {
+      width: 6px;
+      height: 6px;
+      background-color: var(--text-secondary);
+      border-radius: 50%;
+      animation: bounce 1.4s infinite ease-in-out both;
+    }
+
+    .typing-indicator span:nth-child(1) { animation-delay: -0.32s; }
+    .typing-indicator span:nth-child(2) { animation-delay: -0.16s; }
+
+    @keyframes bounce {
+      0%, 80%, 100% { transform: scale(0); }
+      40% { transform: scale(1); }
+    }
+
+    .input-bar {
+      margin-top: 1rem;
+      background-color: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: 0.75rem;
+      padding: 0.5rem 0.75rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      flex-shrink: 0;
+    }
+
+    .input-row {
+      display: flex;
+      align-items: flex-end;
+      gap: 0.5rem;
+    }
+
+    #user-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--text-primary);
+      font-size: 0.95rem;
+      font-family: inherit;
+      resize: none;
+      max-height: 120px;
+      line-height: 1.4;
+      padding: 0.25rem 0;
+    }
+
+    #send-btn {
+      background-color: var(--accent);
+      color: white;
+      border: none;
+      width: 2.25rem;
+      height: 2.25rem;
+      border-radius: 0.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: background 0.2s, opacity 0.2s;
+      flex-shrink: 0;
+    }
+
+    #send-btn:hover:not(:disabled) {
+      background-color: var(--accent-hover);
+    }
+
+    #send-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .input-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <div class="brand-icon">AI</div>
+      <div class="brand-info">
+        <h1>MCP Chat Assistant</h1>
+        <p>LangGraph Agent with Database Tools</p>
+      </div>
+    </div>
+    <div class="header-actions">
+      <button class="btn-secondary" id="clear-btn" type="button">Clear Chat</button>
+    </div>
+  </header>
+
+  <main>
+    <div id="chat-window">
+      <div class="welcome-container" id="welcome-message">
+        <h2>How can I help you today?</h2>
+        <p>Ask questions about the database schema, count tables, or inspect data using Model Context Protocol tools.</p>
+        <div class="suggestion-chips">
+          <button class="chip-btn" type="button" data-prompt="What tables exist in the database?">What tables exist in the database?</button>
+          <button class="chip-btn" type="button" data-prompt="Count all tables in the database">Count all tables in the database</button>
+          <button class="chip-btn" type="button" data-prompt="Show me sample records from the primary tables">Show me sample records from the primary tables</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="input-bar">
+      <div class="input-row">
+        <textarea id="user-input" rows="1" placeholder="Type your message... (Enter to send, Shift+Enter for newline)"></textarea>
+        <button id="send-btn" type="button" title="Send message" disabled>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+          </svg>
+        </button>
+      </div>
+      <div class="input-footer">
+        <span>FastMCP + LangGraph</span>
+        <span>Real-time Stream</span>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    const chatWindow = document.getElementById("chat-window");
+    const userInput = document.getElementById("user-input");
+    const sendBtn = document.getElementById("send-btn");
+    const clearBtn = document.getElementById("clear-btn");
+    const welcomeMessage = document.getElementById("welcome-message");
+
+    let isProcessing = false;
+
+    function adjustTextareaHeight() {
+      userInput.style.height = "auto";
+      userInput.style.height = Math.min(userInput.scrollHeight, 120) + "px";
+      sendBtn.disabled = !userInput.value.trim() || isProcessing;
+    }
+
+    userInput.addEventListener("input", adjustTextareaHeight);
+
+    userInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+      }
+    });
+
+    document.querySelectorAll(".chip-btn").forEach((chip) => {
+      chip.addEventListener("click", () => {
+        userInput.value = chip.getAttribute("data-prompt");
+        adjustTextareaHeight();
+        sendMessage();
+      });
+    });
+
+    clearBtn.addEventListener("click", () => {
+      chatWindow.innerHTML = "";
+      if (welcomeMessage) {
+        chatWindow.appendChild(welcomeMessage);
+      }
+    });
+
+    function escapeHtml(str) {
+      return str
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    function formatMarkdown(text) {
+      let escaped = escapeHtml(text);
+      escaped = escaped.replace(/```([\s\S]*?)```/g, (match, p1) => {
+        return `<pre><code>${p1.trim()}</code></pre>`;
+      });
+      escaped = escaped.replace(/`([^`]+)`/g, "<code>$1</code>");
+      escaped = escaped.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+      escaped = escaped.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+      escaped = escaped.replace(/\n/g, "<br>");
+      return escaped;
+    }
+
+    function appendMessage(role, content = "") {
+      if (welcomeMessage && welcomeMessage.parentNode) {
+        welcomeMessage.remove();
+      }
+
+      const row = document.createElement("div");
+      row.className = `message-row ${role}`;
+
+      const bubble = document.createElement("div");
+      bubble.className = "message-bubble";
+      bubble.innerHTML = formatMarkdown(content);
+
+      row.appendChild(bubble);
+      chatWindow.appendChild(row);
+      chatWindow.scrollTop = chatWindow.scrollHeight;
+      return bubble;
+    }
+
+    function appendTypingIndicator() {
+      if (welcomeMessage && welcomeMessage.parentNode) {
+        welcomeMessage.remove();
+      }
+
+      const row = document.createElement("div");
+      row.className = "message-row agent typing-row";
+
+      const bubble = document.createElement("div");
+      bubble.className = "message-bubble typing-indicator";
+      bubble.innerHTML = "<span></span><span></span><span></span>";
+
+      row.appendChild(bubble);
+      chatWindow.appendChild(row);
+      chatWindow.scrollTop = chatWindow.scrollHeight;
+      return row;
+    }
+
+    async function sendMessage() {
+      const query = userInput.value.trim();
+      if (!query || isProcessing) return;
+
+      appendMessage("user", query);
+      userInput.value = "";
+      adjustTextareaHeight();
+
+      isProcessing = true;
+      sendBtn.disabled = true;
+
+      const typingRow = appendTypingIndicator();
+
+      try {
+        const response = await fetch("/chat/stream", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`Server returned status ${response.status}`);
+        }
+
+        typingRow.remove();
+        const bubble = appendMessage("agent", "");
+        let accumulatedText = "";
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder("utf-8");
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const chunk = decoder.decode(value, { stream: true });
+          accumulatedText += chunk;
+          bubble.innerHTML = formatMarkdown(accumulatedText);
+          chatWindow.scrollTop = chatWindow.scrollHeight;
+        }
+      } catch (err) {
+        if (typingRow && typingRow.parentNode) {
+          typingRow.remove();
+        }
+        appendMessage("agent", `Error: ${err.message}. Please check that the server and MCP tool server are running.`);
+      } finally {
+        isProcessing = false;
+        adjustTextareaHeight();
+        chatWindow.scrollTop = chatWindow.scrollHeight;
+      }
+    }
+  </script>
+</body>
+</html>
