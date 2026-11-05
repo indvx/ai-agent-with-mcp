@@ -7,10 +7,10 @@ from core.config import settings
 # Build the database connection string from environment variables
 SQLALCHEMY_DATABASE_URL = "{}://{}:{}@{}:{}/{}".format(
     settings.db_connection,
-    settings.db_host,
-    settings.db_port,
     settings.db_user,
     settings.db_password,
+    settings.db_host,
+    settings.db_port,
     settings.db_database,
 )
 connect_args = {}

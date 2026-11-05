@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     db_port: int
     db_user: str
     db_password: str
-    db_name: str
+    db_database: str
     db_ssl_mode: Literal["require", "disable"]
     db_ssl_key: Optional[str] = None
 
