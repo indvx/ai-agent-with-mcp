@@ -8,23 +8,24 @@ This project implements a production-ready AI agent system that combines:
 - **LangGraph**: For orchestrating stateful, multi-step agent workflows.
 - **Model Context Protocol (MCP)**: For standardized integration with backend database operations.
 - **FastAPI**: Modern, fast web framework with automatic API documentation.
-- **OpenAI API**: Advanced language model capabilities (GPT models).
+- **Multi-Provider LLM Support**: Unified LLM client supporting Groq, OpenAI, and Google Gemini.
+- **Centralized Configuration**: Environment management via Pydantic `BaseSettings` (`core/config.py`).
 - **JWT Authentication**: Secure token-based user authentication.
 - **Role-Based Access Control (RBAC)**: Fine-grained permission management.
 - **SQLAlchemy ORM**: Database abstraction layer with MySQL and SQLite support.
 
 ## Features
 
-- 🤖 **AI Agent**: Intelligent agent powered by GPT models with MCP tool integration.
+- 🤖 **AI Agent**: Intelligent agent powered by configurable LLMs with MCP tool integration.
 - 🧠 **Conversation Memory**: State persistence across interactions using LangGraph `MemorySaver` (thread-based tracking).
 - 🔄 **LangGraph Pipeline**: State-based workflow for multi-turn agent conversations.
-- 🛠️ **MCP Integration**: Standardized tool protocol for database operation execution.
+- 🛠️ **MCP Integration**: Standardized tool protocol for database operation execution over HTTP streaming.
 - 🚀 **FastAPI Server**: Modern REST API with automatic documentation.
 - 🔐 **JWT Authentication**: Secure user authentication with access & refresh tokens.
 - 👥 **Role-Based Access Control**: Multi-tier permission system (admin, manager, user).
 - 💾 **MySQL & SQLite Support**: SQLAlchemy ORM with connection pooling.
 - 📊 **Rate Limiting**: Configurable request throttling (5 requests/minute default).
-- 📈 **Token Usage Tracking**: Monitors OpenAI API token consumption per request.
+- 📈 **Token Usage Tracking**: Monitors LLM token consumption per request.
 - 🛡️ **Permission Management**: Granular permission control at endpoint level.
 - 🔄 **Token Refresh**: Support for access token refresh without re-authentication.
 - 🗑️ **Token Revocation**: Logout functionality with refresh token blacklisting.
@@ -62,12 +63,11 @@ Database Layer (SQLAlchemy ORM)
     └── RefreshTokens (token management & revocation)
 
 LanggraphService (AI Agent)
-    ├── MCP Client (connects to external MCP server for tools)
+    ├── MCP Client (connects to external MCP server via MCP_URL)
     ├── MainState (question, answer, token_usage, tool_calls, messages)
-    ├── MemorySaver (persists conversation state per thread_id)
     ├── LangGraph Pipeline
     │   └── chat node (processes queries with LLM)
-    └── Token Usage Tracking (tracks OpenAI consumption)
+    └── Token Usage Tracking (tracks LLM token consumption)
 ```
 
 ## Tech Stack
@@ -76,30 +76,29 @@ LanggraphService (AI Agent)
 - **FastAPI 0.136.3**: Web framework with async support.
 - **LangGraph 1.2.1**: Agent workflow orchestration.
 - **LangChain 1.3.1**: LLM framework and agents.
-- **LangChain-OpenAI 1.2.2**: OpenAI integration.
+- **LangChain-OpenAI 1.2.2**: OpenAI and OpenAI-compatible API (Groq) integration.
+- **LangChain-Google-GenAI**: Google Gemini LLM integration.
 - **LangChain-MCP-Adapters 0.2.2**: MCP protocol support.
-- **MCP 1.27.1**: Model Context Protocol.
 - **SQLAlchemy 2.0.50**: ORM for database operations.
-- **MySQL Connector 9.7.0**: MySQL connectivity.
 - **PyMySQL 1.2.0**: Pure Python MySQL driver.
 - **PyJWT 2.13.0**: JWT token encoding/decoding.
 - **pwdlib 0.3.0**: Password hashing with Argon2.
 - **SlowAPI 0.1.9**: Rate limiting.
-- **Pydantic**: Data validation.
+- **Pydantic / Pydantic-Settings**: Schema validation and settings management.
 
 ## Installation
 
 ### Prerequisites
 - Python 3.8 or higher.
 - MySQL 5.7+ database running (or SQLite for testing).
-- OpenAI API key (for GPT model access).
-- MCP server running on localhost:8001 (optional, for agent tools).
+- LLM API key (Groq, OpenAI, or Google Gemini).
+- MCP database tool server running (accessible via `MCP_URL`).
 
 ### Setup
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/indvx/ai-agent-with-mcp.git
+   git clone https://github.com/<username>/ai-agent-with-mcp.git
    cd ai-agent-with-mcp
    ```
 
@@ -114,37 +113,7 @@ LanggraphService (AI Agent)
    pip install -r requirements.txt
    ```
 
-4. **Configure environment variables**
-   ```bash
-   cp .env-example .env
-   ```
-   Edit `.env` with your configuration:
-   ```env
-   # MCP Configuration
-   MCP_HOST=localhost
-   MCP_PORT=8001
-   MCP_URL=http://localhost:8001/mcp
-
-   # DB Connection
-   DB_CONNECTION=mysql+pymysql
-   MYSQL_HOST=localhost
-   MYSQL_PORT=3306
-   MYSQL_USER=root
-   MYSQL_PASSWORD=root
-   MYSQL_DATABASE=ai_agent_with_mcp
-
-   # OpenAI Configuration
-   OPENAI_API_KEY=your-api-key-here
-   OPENAI_MODEL=gpt-3.5-turbo
-
-   # JWT Configuration
-   SECRET_KEY=your-secret-key-here
-   ALGORITHM=HS256
-   ACCESS_TOKEN_EXPIRE_MINUTES=15
-   REFRESH_TOKEN_EXPIRE_DAYS=7
-   ```
-
-5. **Initialize the database**
+4. **Initialize the database**
    ```bash
    # Run database migrations to create tables
    alembic upgrade head
@@ -172,6 +141,7 @@ ai-agent-with-mcp/
 ├── main.py                          # FastAPI app entry point
 ├── database.py                      # SQLAlchemy engine, session factory
 ├── core/
+│   ├── config.py                   # Centralized application settings (Pydantic BaseSettings)
 │   └── security.py                 # JWT token handling, password hashing, authorization
 ├── routers/
 │   ├── auth.py                     # Authentication endpoints (register, login, refresh, logout)
@@ -183,7 +153,8 @@ ai-agent-with-mcp/
 │   ├── auth.py                     # Authentication business logic (JWT, password verification)
 │   ├── user.py                     # User service operations
 │   ├── role.py                     # Role service operations
-│   ├── langgraph_service.py        # AI agent orchestration with LangGraph
+│   ├── llm_service.py              # LLM factory service supporting Groq, OpenAI, and Gemini
+│   ├── langgraph_service.py        # AI agent orchestration with LangGraph & streamable MCP client
 │   └── utility.py                  # Utility functions
 ├── schemas/
 │   ├── auth.py                     # RegisterRequest, LoginRequest, RefreshTokenRequest
@@ -209,12 +180,15 @@ ai-agent-with-mcp/
 │   ├── __init__.py
 │   ├── conftest.py                 # Pytest configuration and dependency injection overrides
 │   ├── test_main.py                # Health checks & basic routing tests
+│   ├── test_security.py            # Authentication & JWT security tests
+│   ├── test_llm_service.py         # LLM service tests
+│   ├── test_mcp.py                 # MCP tool serialization and queries tests
 │   └── users/
 │       └── test_user.py            # User registration and management tests
 ├── requirements.txt                # Python dependencies
 ├── .env-example                    # Environment variables template
 ├── .gitignore                      # Git ignore rules
-└── README.md                       # This file
+└── README.md                       # Documentation
 ```
 
 ## Usage
@@ -228,15 +202,6 @@ uvicorn main:app --reload
 # Server available at http://localhost:8000
 # API docs: http://localhost:8000/docs (Swagger UI)
 # Alternative docs: http://localhost:8000/redoc (ReDoc)
-```
-
-### Running the MCP Server
-
-```bash
-# Start the FastMCP server for database tools
-python -m mcp.server
-
-# MCP Server runs on http://localhost:8001 (based on .env config)
 ```
 
 ### API Examples
@@ -260,7 +225,7 @@ curl http://localhost:8000/
 
 ### Authorization Flow
 1. Protected endpoints check JWT token validity.
-2. SecurityHandler decodes and validates token.
+2. `core/security.py` decodes and validates token using `core/config.py` settings.
 3. User roles and permissions are retrieved from database.
 4. Endpoint checks if user has required permission or role.
 5. Returns 403 Forbidden if user lacks necessary permissions/roles.
@@ -269,13 +234,13 @@ curl http://localhost:8000/
 1. User sends query to `/chat/` with valid JWT token.
 2. Permission check: requires "chat:use" permission.
 3. Rate limiter: 5 requests per minute per IP.
-4. LanggraphService initializes MCP client for tools.
+4. LanggraphService initializes streamable MCP client for tools using `MCP_URL`.
 5. LangGraph pipeline processes question:
-   - State retrieved via `MemorySaver` using `thread_id`.
-   - MainState created/updated with user query.
-   - ask_question node invokes OpenAI LLM with MCP tools.
+   - User query packaged into `HumanMessage`.
+   - Dynamic tools fetched from MCP server.
+   - LLM model created from `service/llm_service.py` based on `LLM_PROVIDER` in settings.
    - Tools are executed (database operations).
-   - LLM synthesizes response and updated state is saved.
+   - LLM synthesizes response and state is returned.
 6. Token usage and tool calls are tracked and returned.
 
 ## Database Schema
@@ -348,33 +313,13 @@ curl http://localhost:8000/
 - `/chat/` and `/chat/stream` endpoints: 5 requests per minute per IP address (SlowAPI).
 - Exceeding limit returns 429 (Too Many Requests).
 
-## Environment Configuration
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `DB_CONNECTION` | Database connection driver | `mysql+pymysql` |
-| `MYSQL_HOST` | MySQL hostname | `localhost` |
-| `MYSQL_PORT` | MySQL port | `3306` |
-| `MYSQL_USER` | MySQL username | `root` |
-| `MYSQL_PASSWORD` | MySQL password | `root` |
-| `MYSQL_DATABASE` | Database name | `ai_agent_with_mcp` |
-| `OPENAI_API_KEY` | OpenAI API key | **Required** |
-| `OPENAI_MODEL` | OpenAI model | `gpt-3.5-turbo` |
-| `SECRET_KEY` | JWT secret key | **Required** |
-| `ALGORITHM` | JWT algorithm | `HS256` |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | Access token TTL | `15` |
-| `REFRESH_TOKEN_EXPIRE_DAYS` | Refresh token TTL | `7` |
-| `MCP_HOST` | MCP server hostname | `localhost` |
-| `MCP_PORT` | MCP server port | `8001` |
-| `MCP_URL` | MCP server URL | `http://localhost:8001/mcp` |
-
 ## Troubleshooting
 
 ### Database Connection Error
 - Verify MySQL is running: `mysql -h localhost -u root -p`
-- Check credentials in `.env`
-- Ensure database exists: `CREATE DATABASE ai_agent_with_mcp;`
-- Verify connection string format in `database.py`
+- Check credentials in `.env` (`DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_DATABASE`)
+- Ensure database exists: `CREATE DATABASE your_database_name;`
+- Verify connection string format in `core/config.py` and `database.py`
 
 ### JWT Token Error
 - Ensure `SECRET_KEY` is set in `.env`
@@ -388,20 +333,13 @@ curl http://localhost:8000/
 - Check permission name matches exactly (case-sensitive).
 
 ### MCP Connection Error
-- Ensure MCP server running on configured `MCP_URL`
-- Verify network connectivity
-- Check `MCP_HOST` and `MCP_PORT` in `.env`
+- Ensure MCP server is running on the configured `MCP_URL`
+- Verify network connectivity between the FastAPI server and the MCP server
 
-### OpenAI API Error
-- Verify `OPENAI_API_KEY` is correct
-- Check API quota and rate limits
-- Ensure model in `OPENAI_MODEL` is valid
-- Monitor token usage in response
-
-### Rate Limiting Error (429)
-- Wait before making new requests.
-- Check X-RateLimit-Remaining header.
-- Adjust rate limit in `routers/chat.py` if needed.
+### LLM API Error
+- Verify `LLM_API_KEY` is set correctly for the chosen `LLM_PROVIDER` (`groq`, `openai`, or `gemini`)
+- Ensure `LLM_MODEL` and `LLM_BASE_URL` match your provider configuration
+- Check API quota and rate limits with the LLM vendor
 
 ## Contributing
 

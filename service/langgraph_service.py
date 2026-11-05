@@ -2,14 +2,12 @@ from typing import TypedDict, Optional, Any
 from langgraph.graph import StateGraph, START, END
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
-from dotenv import load_dotenv
-import os, sys
-
-load_dotenv()
+import sys
 
 from langchain.agents import create_agent
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from service.llm_service import LLMService
+from core.config import settings
 
 
 # Defines the data passed between LangGraph nodes during a chat request
@@ -30,7 +28,7 @@ class LanggraphService:
     def __init__(self):
         self.__graph = None
         self.__mcp_client = None
-        self.__mcp_url = os.getenv("MCP_URL", "http://localhost:8001/mcp")
+        self.__mcp_url = settings.mcp_url
 
     async def initialize(self):
         """Connects to the FastMCP database tool server running over HTTP streaming."""

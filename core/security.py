@@ -3,12 +3,9 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from sql.models.users import User
 import jwt
-import os
 from database import get_db
 from service.user import UserService
-
-secret_key = os.getenv("SECRET_KEY")
-algorithm = os.getenv("ALGORITHM", "HS256")
+from core.config import settings
 
 
 class JWTBearer(HTTPBearer):
@@ -106,7 +103,7 @@ def has_permissions(allowed_permissions: list[str]):
 def decode_token(token: str):
     """Decodes and validates JWT token expiration and signature."""
     try:
-        payload = jwt.decode(token, secret_key, algorithms=[algorithm])
+        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
         return payload
 
     except jwt.ExpiredSignatureError:
