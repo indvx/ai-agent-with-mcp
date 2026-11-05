@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from routers import chat, auth, role, user
+from routers import chat
 
 app = FastAPI(
     title="MCP Chat API",
@@ -8,7 +8,6 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# Enable CORS so frontend web apps can call the API without browser errors
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -17,11 +16,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Register route modules for chat, authentication, roles, and users
 app.include_router(chat.router)
-app.include_router(auth.router)
-app.include_router(role.router)
-app.include_router(user.router)
 
 
 @app.get("/")
@@ -32,5 +27,5 @@ async def root():
 
 @app.get("/health")
 async def health_check(request: Request):
-    """Liveness probe used by Docker and container monitors."""
+    """Liveness probe used by container monitors."""
     return {"status": "ok"}

@@ -1,41 +1,25 @@
+from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import Optional, Literal
+
 
 class Settings(BaseSettings):
     """Application settings loaded from environment or .env file."""
 
-    # Database connection settings
-    db_connection: str
-    db_host: str
-    db_port: int
-    db_user: str
-    db_password: str
-    db_database: str
-    db_ssl_mode: Literal["require", "disable"]
-    db_ssl_key: Optional[str] = None
-
     # LLM settings
-    llm_provider: str
-    llm_model : str
-    llm_base_url : str
-    llm_api_key : str
-    llm_temperature : str
+    llm_provider: str = "groq"
+    llm_model: str = "openai/gpt-oss-20b"
+    llm_base_url: Optional[str] = "https://api.groq.com/openai/v1"
+    llm_api_key: str = ""
+    llm_temperature: float = 0.3
 
     # MCP settings
-    mcp_url : str
-
-    # Auth settings
-    secret_key: str
-    algorithm: str
-    access_token_expire_minutes: int
-    refresh_token_expire_days: int
+    mcp_url: str = "http://localhost:8001/mcp"
 
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
-        extra="ignore", 
+        extra="ignore",
     )
 
 
-# Singleton instance reused across the app
 settings = Settings()
