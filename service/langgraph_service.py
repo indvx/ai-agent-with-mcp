@@ -8,6 +8,7 @@ from langchain.agents import create_agent
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from service.llm_service import LLMService
 from core.config import settings
+import logging
 
 
 # Defines the data passed between LangGraph nodes during a chat request
@@ -20,7 +21,7 @@ class MainState(TypedDict):
 
 # Shared chat model instance for the AI agent
 llm = LLMService().get_chat_model()
-
+logger = logging.getLogger(__name__)
 
 class LanggraphService:
     """Manages the LangGraph agent workflow and connects it to the MCP tool server."""
@@ -32,6 +33,10 @@ class LanggraphService:
 
     async def initialize(self):
         """Connects to the FastMCP database tool server running over HTTP streaming."""
+        if self.__mcp_client:
+            logger.info("MCP client already initialized.")
+            return self.__mcp_client
+        logger.info("Initializing MCP client...")
         try:
             self.__mcp_client = MultiServerMCPClient(
                 {
@@ -43,7 +48,7 @@ class LanggraphService:
             )
             return self.__mcp_client
         except Exception as e:
-            print(f"Error initializing MCP client: {e}", file=sys.stderr)
+            logger.warning(f"Failed to initialize MCP client: {e}.")
             raise e
 
     async def ask_question(self, state: MainState):
@@ -93,8 +98,8 @@ Guidelines:
             "total_tokens": total_tokens,
         }
 
-        print("token_usage", token_usage, file=sys.stderr)
-        print("tool_calls", tool_calls, file=sys.stderr)
+        logger.info("Token usage: %s", token_usage)
+        logger.info("Tool calls: %s", tool_calls)
 
         return {
             "answer": ai_response,
