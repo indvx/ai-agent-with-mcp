@@ -38,3 +38,12 @@ def test_chat_stream_endpoint(client):
         assert response.status_code == 200
         assert "text/event-stream" in response.headers["content-type"]
         assert "Hello streaming world" in response.text
+
+
+def test_chat_validation_empty_query(client):
+    """Verify that empty or whitespace-only queries are rejected with 422."""
+    response = client.post("/chat/", json={"query": ""})
+    assert response.status_code == 422
+
+    response = client.post("/chat/", json={"query": "   "})
+    assert response.status_code == 422

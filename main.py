@@ -1,20 +1,37 @@
+from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from core.config import settings
 from routers import chat
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Initialize services on application startup
+    try:
+        await chat.service.initialize()
+    except Exception:
+        # If MCP server is not yet reachable at startup, it will reconnect on first request
+        pass
+    yield
+    await chat.service.close()
+
 
 app = FastAPI(
     title="MCP Chat API",
     description="API for MCP Chat application",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
+allow_all_origins = "*" in settings.cors_origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=settings.cors_origins,
+    allow_credentials=not allow_all_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )

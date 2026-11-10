@@ -1,13 +1,24 @@
+import logging
 from typing import TypedDict, Optional, Any
 from langgraph.graph import StateGraph, START, END
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
-import sys
-
 from langchain.agents import create_agent
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from service.llm_service import LLMService
 from core.config import settings
+
+logger = logging.getLogger(__name__)
+
+SYSTEM_PROMPT = """You are a strictly read-only database assistant. You cannot modify, delete, or alter any data.
+
+Guidelines:
+1. Lookups: Use `search_records(table, search_term)` to find people or entities by name/keyword in one step. Always verify that both first and last names match the request before presenting a profile; if ambiguous or multiple matches exist, ask for clarification.
+2. Schema: Table names represent entity types (e.g. `employees`, `users`, `departments`, `projects`), never individual person names or values. Query obvious tables directly without redundant schema discovery.
+3. Counting: Use `count_records_table` for row counts and `count_tables` for total tables.
+4. Listing: Use `list_records` only for browsing records with specific summary `fields`. Never browse unfiltered records to find a single person.
+5. Traversal: For reports/logs, find the parent ID with `search_records`, then query child tables with `list_records(table, field="<entity>_id", value=id)`.
+6. Casual Chat & Output: Reply directly to greetings without tools. Present results in concise Markdown."""
 
 
 # Defines the data passed between LangGraph nodes during a chat request
@@ -18,20 +29,27 @@ class MainState(TypedDict):
     tool_calls: Optional[list]
 
 
-# Shared chat model instance for the AI agent
-llm = LLMService().get_chat_model()
-
-
 class LanggraphService:
     """Manages the LangGraph agent workflow and connects it to the MCP tool server."""
 
-    def __init__(self):
+    def __init__(self, llm_service: Optional[LLMService] = None):
         self.__graph = None
         self.__mcp_client = None
         self.__mcp_url = settings.mcp_url
+        self._llm_service = llm_service or LLMService()
+        self._llm: Optional[BaseChatModel] = None
 
-    async def initialize(self):
-        """Connects to the FastMCP database tool server running over HTTP streaming."""
+    @property
+    def llm(self) -> BaseChatModel:
+        if self._llm is None:
+            self._llm = self._llm_service.get_chat_model()
+        return self._llm
+
+    async def initialize(self) -> MultiServerMCPClient:
+        """Initializes the MCP client connection if not already created."""
+        if self.__mcp_client is not None:
+            return self.__mcp_client
+
         try:
             self.__mcp_client = MultiServerMCPClient(
                 {
@@ -43,33 +61,28 @@ class LanggraphService:
             )
             return self.__mcp_client
         except Exception as e:
-            print(f"Error initializing MCP client: {e}", file=sys.stderr)
-            raise e
+            logger.error("[ERROR] Failed to initialize MCP client: %s", e)
+            raise
+
+    async def close(self):
+        """Clean up resources on service shutdown."""
+        self.__mcp_client = None
 
     async def ask_question(self, state: MainState):
         """Invokes the AI agent with database tools to generate a verified answer."""
-        messages = []
+        question = state.get("question")
+        messages = [
+            SystemMessage(content=SYSTEM_PROMPT),
+            HumanMessage(content=question),
+        ]
         tool_calls = []
 
-        question = state.get("question")
-        messages.append(HumanMessage(content=question))
-        messages.append(
-            SystemMessage(
-                content="""You are a strictly read-only database assistant. You cannot modify, delete, or alter any data.
-
-Guidelines:
-1. Lookups: Use `search_records(table, search_term)` to find people or entities by name/keyword in one step. Always verify that both first and last names match the request before presenting a profile; if ambiguous or multiple matches exist, ask for clarification.
-2. Schema: Table names represent entity types (e.g. `employees`, `users`, `departments`, `projects`), never individual person names or values. Query obvious tables directly without redundant schema discovery.
-3. Counting: Use `count_records_table` for row counts and `count_tables` for total tables.
-4. Listing: Use `list_records` only for browsing records with specific summary `fields`. Never browse unfiltered records to find a single person.
-5. Traversal: For reports/logs, find the parent ID with `search_records`, then query child tables with `list_records(table, field="<entity>_id", value=id)`.
-6. Casual Chat & Output: Reply directly to greetings without tools. Present results in concise Markdown."""
-            )
-        )
+        if self.__mcp_client is None:
+            await self.initialize()
 
         # Discover tools dynamically from the MCP server and bind them to the LLM
         tools = await self.__mcp_client.get_tools()
-        agent = create_agent(llm, tools)
+        agent = create_agent(self.llm, tools)
         result = await agent.ainvoke({"messages": messages})
         ai_response = result["messages"][-1].content
         input_tokens = 0
@@ -93,8 +106,8 @@ Guidelines:
             "total_tokens": total_tokens,
         }
 
-        print("token_usage", token_usage, file=sys.stderr)
-        print("tool_calls", tool_calls, file=sys.stderr)
+        logger.info("[INFO] Token usage: %s", token_usage)
+        logger.info("[INFO] Tool calls: %s", tool_calls)
 
         return {
             "answer": ai_response,

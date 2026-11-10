@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import List, Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -14,6 +14,9 @@ class Settings(BaseSettings):
 
     # MCP settings
     mcp_url: str = "http://localhost:8001/mcp"
+
+    # CORS settings
+    cors_origins: List[str] = ["*"]
 
     model_config = SettingsConfigDict(
         env_file=".env",
