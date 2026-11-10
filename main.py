@@ -13,24 +13,10 @@ setup_logging()
 logger = get_logger(__name__)
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Initialize services on application startup
-    try:
-        await chat.service.initialize()
-        logger.info("MCP client initialized successfully.")
-    except Exception as e:
-        logger.warning("[WARN] MCP server unreachable on startup; will retry on first request: %s", e)
-    yield
-    await chat.service.close()
-    logger.info("Application shutdown complete.")
-
-
 app = FastAPI(
     title="MCP Chat API",
     description="API for MCP Chat application",
     version="1.0.0",
-    lifespan=lifespan,
 )
 
 allow_all_origins = "*" in settings.cors_origins
