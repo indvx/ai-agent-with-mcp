@@ -17,7 +17,6 @@ app = FastAPI(
     title="MCP Chat API",
     description="API for MCP Chat application",
     version="1.0.0",
-    lifespan=lifespan,
 )
 
 allow_all_origins = "*" in settings.cors_origins
