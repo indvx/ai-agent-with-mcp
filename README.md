@@ -17,6 +17,7 @@ This project implements a streamlined AI agent system that combines:
 - 🔄 **LangGraph Pipeline**: State-based workflow for multi-turn agent conversations.
 - 🛠️ **MCP Integration**: Standardized tool protocol for database inspection and queries via `MCP_URL`.
 - ⚡ **Streaming & Standard Endpoints**: Supports full response (`POST /chat/`) and server-sent event streaming (`POST /chat/stream`).
+- ⚡ **Response Caching**: In-memory TTL query caching and LLM prompt memoization for zero-token identical queries.
 - 📊 **Rate Limiting**: Configurable request throttling (5 requests/minute default) via SlowAPI.
 - 📈 **Token Usage Tracking**: Monitors LLM token consumption per request.
 - 🚀 **FastAPI Server**: REST API with automatic Swagger UI and ReDoc documentation.
@@ -100,23 +101,19 @@ LanggraphService (AI Agent)
 ai-agent-with-mcp/
 ├── main.py                          # FastAPI app entry point and health checks
 ├── core/
-│   └── config.py                   # Centralized application settings (Pydantic BaseSettings)
+│   ├── config.py                    # Centralized application settings (Pydantic BaseSettings)
+│   └── logger.py                    # Centralized logging configuration and logger factory
 ├── routers/
-│   └── chat.py                     # AI chat endpoints (POST /chat/ and POST /chat/stream)
+│   └── chat.py                      # AI chat endpoints (POST /chat/ and POST /chat/stream)
 ├── service/
-│   ├── llm_service.py              # LLM factory supporting Groq, OpenAI, and Gemini
-│   └── langgraph_service.py        # LangGraph workflow & streamable MCP client
+│   ├── llm_service.py               # LLM factory supporting Groq, OpenAI, and Gemini
+│   └── langgraph_service.py         # LangGraph workflow, TTL query cache & streamable MCP client
 ├── schemas/
-│   └── chat.py                     # Chat request schema
-├── test/
-│   ├── conftest.py                 # Pytest fixtures and TestClient
-│   ├── test_main.py                # Health checks & root endpoint tests
-│   ├── test_chat.py                # Chat route tests
-│   └── test_llm_service.py         # LLM service tests
-├── requirements.txt                # Python dependencies
-├── .env-example                    # Environment variables template
-├── .gitignore                      # Git ignore rules
-└── README.md                       # Documentation
+│   └── chat.py                      # Chat request validation schema
+├── requirements.txt                 # Python dependencies
+├── .env-example                     # Environment variables template
+├── .gitignore                       # Git ignore rules
+└── README.md                        # Documentation
 ```
 
 ## Usage
@@ -159,14 +156,6 @@ curl -X POST http://localhost:8000/chat/stream \
   -d '{"query": "Provide a summary report of employee departments"}'
 ```
 
-## Running Tests
-
-Execute the test suite with pytest:
-
-```bash
-pytest test/
-```
-
 ## Environment Configuration
 
 | Variable | Description | Example / Default |
@@ -177,6 +166,9 @@ pytest test/
 | `LLM_API_KEY` | Provider API key | **Required** |
 | `LLM_TEMPERATURE` | Sampling temperature | `0.3` |
 | `MCP_URL` | FastMCP streaming server endpoint URL | `http://localhost:8001/mcp` |
+| `LOG_LEVEL` | Application logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) | `INFO` |
+| `CACHE_TTL_SECONDS` | Query response cache duration in seconds (`0` to disable) | `300` |
+| `CACHE_MAX_SIZE` | Maximum cached query entries in memory | `500` |
 
 ## Troubleshooting
 
