@@ -112,7 +112,7 @@ class LanggraphService:
             )
             return self.__mcp_client
         except Exception as e:
-            logger.error("[ERROR] Failed to initialize MCP client: %s", e)
+            logger.error(" Failed to initialize MCP client: %s", e)
             raise
 
     async def close(self):
@@ -157,8 +157,8 @@ class LanggraphService:
             "total_tokens": total_tokens,
         }
 
-        logger.info("[INFO] Token usage: %s", token_usage)
-        logger.info("[INFO] Tool calls: %s", tool_calls)
+        logger.info("Token usage: %s", token_usage)
+        logger.info("Tool calls: %s", tool_calls)
 
         return {
             "answer": ai_response,

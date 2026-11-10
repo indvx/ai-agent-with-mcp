@@ -24,7 +24,7 @@ async def generate_stream_data(query: str):
         # Return cached answer immediately if identical query was previously processed
         cached = service.get_cached_response(query)
         if cached is not None:
-            logger.info("[INFO] Streaming cache hit for query: '%s' (0 tokens consumed)", query)
+            logger.info("Streaming cache hit for query: '%s' (0 tokens consumed)", query)
             answer = cached.get("answer", "")
             if answer:
                 yield answer
@@ -52,7 +52,7 @@ async def generate_stream_data(query: str):
                 },
             )
     except Exception as e:
-        logger.error("[ERROR] Stream generation error: %s", e)
+        logger.error("Stream generation error: %s", e)
         yield f"\n[Error: {e}]"
 
 
@@ -63,7 +63,7 @@ async def chat(query: Chat, request: Request):
     # Return cached response if query already answered within TTL window
     cached = service.get_cached_response(query.query)
     if cached is not None:
-        logger.info("[INFO] Cache hit for query: '%s' (0 tokens consumed)", query.query)
+        logger.info("Cache hit for query: '%s' (0 tokens consumed)", query.query)
         return cached
 
     await service.initialize()

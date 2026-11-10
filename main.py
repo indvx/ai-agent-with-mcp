@@ -18,12 +18,12 @@ async def lifespan(app: FastAPI):
     # Initialize services on application startup
     try:
         await chat.service.initialize()
-        logger.info("[INFO] MCP client initialized successfully.")
+        logger.info("MCP client initialized successfully.")
     except Exception as e:
         logger.warning("[WARN] MCP server unreachable on startup; will retry on first request: %s", e)
     yield
     await chat.service.close()
-    logger.info("[INFO] Application shutdown complete.")
+    logger.info("Application shutdown complete.")
 
 
 app = FastAPI(
