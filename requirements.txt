@@ -6,4 +6,3 @@ langchain-google-genai >= 2.0.0
 langgraph == 1.2.1
 mcp == 1.27.1
 slowapi == 0.1.9
-pytest == 9.0.3

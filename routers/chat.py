@@ -21,13 +21,36 @@ service = LanggraphService()
 async def generate_stream_data(query: str):
     """Yield model output as tokens arrive from the agent stream."""
     try:
+        # Return cached answer immediately if identical query was previously processed
+        cached = service.get_cached_response(query)
+        if cached is not None:
+            logger.info("[INFO] Streaming cache hit for query: '%s' (0 tokens consumed)", query)
+            answer = cached.get("answer", "")
+            if answer:
+                yield answer
+            return
+
         await service.initialize()
         graph = service.build_pipeline()
+        collected_chunks = []
+
         async for event in graph.astream_events({"question": query}, version="v2"):
             if event["event"] == "on_chat_model_stream":
                 content = event["data"]["chunk"].content
                 if content:
+                    collected_chunks.append(content)
                     yield content
+
+        full_answer = "".join(collected_chunks)
+        if full_answer:
+            service.cache_response(
+                query,
+                {
+                    "answer": full_answer,
+                    "token_usage": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+                    "tool_calls": [],
+                },
+            )
     except Exception as e:
         logger.error("[ERROR] Stream generation error: %s", e)
         yield f"\n[Error: {e}]"
@@ -37,6 +60,12 @@ async def generate_stream_data(query: str):
 @limiter.limit("5/minute")
 async def chat(query: Chat, request: Request):
     """Run the agent workflow and return the completed response."""
+    # Return cached response if query already answered within TTL window
+    cached = service.get_cached_response(query.query)
+    if cached is not None:
+        logger.info("[INFO] Cache hit for query: '%s' (0 tokens consumed)", query.query)
+        return cached
+
     await service.initialize()
     graph = service.build_pipeline()
 
@@ -45,6 +74,7 @@ async def chat(query: Chat, request: Request):
             "question": query.query,
         }
     )
+    service.cache_response(query.query, response)
     return response
 
 

@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     # Logging settings
     log_level: str = "INFO"
 
+    # Cache settings
+    cache_ttl_seconds: int = 300
+    cache_max_size: int = 500
+
     # CORS settings
     cors_origins: List[str] = ["*"]
 
