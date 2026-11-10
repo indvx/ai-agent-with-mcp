@@ -1,3 +1,4 @@
+import uuid
 from typing import Optional
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import StreamingResponse
@@ -71,16 +72,6 @@ async def generate_stream_data(query: str, session_id: Optional[str] = None):
                     "tool_calls": [],
                 },
             )
-            if session_id:
-                try:
-                    db = SessionLocal()
-                    try:
-                        save_message(db, session_id, "user", query)
-                        save_message(db, session_id, "assistant", full_answer)
-                    finally:
-                        db.close()
-                except Exception as e:
-                    logger.warning("[WARN] Failed to record stream turn in session history: %s", e)
     except Exception as e:
         logger.error("[ERROR] Stream generation error: %s", e)
         yield f"\n[Error: {e}]"
@@ -90,31 +81,28 @@ async def generate_stream_data(query: str, session_id: Optional[str] = None):
 @limiter.limit("5/minute")
 async def chat(query: Chat, request: Request):
     """Run the agent workflow and return the completed response."""
-    sid = None
-    if query.session_id:
-        try:
-            db = SessionLocal()
-            try:
-                sid = get_or_create_session(db, query.session_id)
-            finally:
-                db.close()
-        except Exception as e:
-            logger.warning("[WARN] Failed to resolve session in MySQL: %s", e)
+    db = SessionLocal()
+    try:
+        sid = get_or_create_session(db, query.session_id)
+    except Exception as e:
+        logger.warning("[WARN] Failed to resolve session in MySQL: %s", e)
+        sid = str(uuid.uuid4())
+    finally:
+        db.close()
 
     # Return cached response if query already answered within TTL window
     cached = service.get_cached_response(query.query)
     if cached is not None:
         logger.info("[INFO] Cache hit for query: '%s' (0 tokens consumed)", query.query)
-        if sid:
+        try:
+            db = SessionLocal()
             try:
-                db = SessionLocal()
-                try:
-                    save_message(db, sid, "user", query.query)
-                    save_message(db, sid, "assistant", cached.get("answer", ""))
-                finally:
-                    db.close()
-            except Exception as e:
-                logger.warning("[WARN] Failed to record cached turn in session history: %s", e)
+                save_message(db, sid, "user", query.query)
+                save_message(db, sid, "assistant", cached.get("answer", ""))
+            finally:
+                db.close()
+        except Exception as e:
+            logger.warning("[WARN] Failed to record cached turn in session history: %s", e)
         return {**cached, "session_id": sid}
 
     await service.initialize()
@@ -134,16 +122,14 @@ async def chat(query: Chat, request: Request):
 @limiter.limit("5/minute")
 async def chat_stream(query: Chat, request: Request):
     """Stream the agent response as server-sent events."""
-    sid = None
-    if query.session_id:
-        try:
-            db = SessionLocal()
-            try:
-                sid = get_or_create_session(db, query.session_id)
-            finally:
-                db.close()
-        except Exception as e:
-            logger.warning("[WARN] Failed to resolve session in MySQL: %s", e)
+    db = SessionLocal()
+    try:
+        sid = get_or_create_session(db, query.session_id)
+    except Exception as e:
+        logger.warning("[WARN] Failed to resolve session in MySQL: %s", e)
+        sid = str(uuid.uuid4())
+    finally:
+        db.close()
 
     return StreamingResponse(
         generate_stream_data(query.query, sid),
