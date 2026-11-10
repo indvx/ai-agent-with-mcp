@@ -393,6 +393,11 @@
     const welcomeMessage = document.getElementById("welcome-message");
 
     let isProcessing = false;
+    let currentSessionId = localStorage.getItem("mcp_chat_session_id");
+    if (!currentSessionId) {
+      currentSessionId = crypto.randomUUID();
+      localStorage.setItem("mcp_chat_session_id", currentSessionId);
+    }
 
     function adjustTextareaHeight() {
       userInput.style.height = "auto";
@@ -418,6 +423,8 @@
     });
 
     clearBtn.addEventListener("click", () => {
+      currentSessionId = crypto.randomUUID();
+      localStorage.setItem("mcp_chat_session_id", currentSessionId);
       chatWindow.innerHTML = "";
       if (welcomeMessage) {
         chatWindow.appendChild(welcomeMessage);
@@ -493,7 +500,7 @@
         const response = await fetch("/chat/stream", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query }),
+          body: JSON.stringify({ query, session_id: currentSessionId }),
           signal: controller.signal,
         });
 

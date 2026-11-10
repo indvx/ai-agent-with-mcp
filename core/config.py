@@ -22,6 +22,16 @@ class Settings(BaseSettings):
     cache_ttl_seconds: int = 300
     cache_max_size: int = 500
 
+    # MySQL Session Database settings
+    db_connection: str
+    db_host: str
+    db_port: str
+    db_user: str
+    db_password: str
+    db_database: str
+    db_ssl_mode: str = "disable"
+    db_ssl_key: str = ''
+
     # CORS settings
     cors_origins: List[str] = ["*"]
 

@@ -1,3 +1,4 @@
+import re
 import time
 from collections import OrderedDict
 from typing import TypedDict, Optional, Any
@@ -8,6 +9,8 @@ from langchain_core.globals import set_llm_cache
 from langchain_core.caches import InMemoryCache
 from langchain.agents import create_agent
 from langchain_mcp_adapters.client import MultiServerMCPClient
+from database import SessionLocal
+from sql.crud.chat import get_recent_messages, save_message
 from service.llm_service import LLMService
 from core.config import settings
 from core.logger import get_logger
@@ -16,6 +19,19 @@ logger = get_logger(__name__)
 
 # Enable in-memory prompt completion caching to reduce duplicate LLM calls
 set_llm_cache(InMemoryCache())
+
+
+def normalize_query_key(query: str) -> str:
+    """Normalizes query by lowercasing, stripping punctuation, and basic plural stemming."""
+    text = query.lower().strip()
+    text = re.sub(r'[^\w\s]', '', text)
+    words = []
+    for word in text.split():
+        if len(word) > 3 and word.endswith('s') and not word.endswith('ss'):
+            word = word[:-1]
+        words.append(word)
+    return " ".join(words)
+
 
 SYSTEM_PROMPT = """You are a strictly read-only database assistant. You cannot modify, delete, or alter any data.
 
@@ -26,12 +42,14 @@ Guidelines:
 4. Listing: Use `list_records` only for browsing records with specific summary `fields`. Never browse unfiltered records to find a single person.
 5. Traversal: For reports/logs, find the parent ID with `search_records`, then query child tables with `list_records(table, field="<entity>_id", value=id)`.
 6. Token Budget: Minimize token usage by ALWAYS specifying the minimal necessary columns in `fields` (e.g. ['id', 'name', 'status']). Limit searches and listings to `limit=3` to `5` rows unless the user explicitly requests more. Never fetch all fields.
-7. Casual Chat & Output: Reply directly to greetings without tools. Present results in concise Markdown."""
+7. Casual Chat & Output: Reply directly to greetings without tools. Present results in concise Markdown.
+8. Context & Follow-ups: When prior conversation turns exist in history, refer to them directly. Do NOT re-execute tools if the information is already provided in previous turns."""
 
 
 # Defines the data passed between LangGraph nodes during a chat request
 class MainState(TypedDict):
     question: Optional[str]
+    session_id: Optional[str]
     answer: Optional[Any]
     token_usage: Optional[dict]
     tool_calls: Optional[list]
@@ -55,7 +73,7 @@ class LanggraphService:
         if self._cache_ttl <= 0:
             return None
 
-        key = query.strip().lower()
+        key = normalize_query_key(query)
         if key not in self._cache:
             return None
 
@@ -72,7 +90,7 @@ class LanggraphService:
         if self._cache_ttl <= 0:
             return
 
-        key = query.strip().lower()
+        key = normalize_query_key(query)
         cached_data = dict(data)
         if "token_usage" in cached_data and isinstance(cached_data["token_usage"], dict):
             cached_data["token_usage"] = {
@@ -112,7 +130,7 @@ class LanggraphService:
             )
             return self.__mcp_client
         except Exception as e:
-            logger.error(" Failed to initialize MCP client: %s", e)
+            logger.error("[ERROR] Failed to initialize MCP client: %s", e)
             raise
 
     async def close(self):
@@ -122,8 +140,22 @@ class LanggraphService:
     async def ask_question(self, state: MainState):
         """Invokes the AI agent with database tools to generate a verified answer."""
         question = state.get("question")
+        session_id = state.get("session_id")
+        history = []
+
+        if session_id:
+            try:
+                db = SessionLocal()
+                try:
+                    history = get_recent_messages(db, session_id, limit=6)
+                finally:
+                    db.close()
+            except Exception as e:
+                logger.warning("[WARN] Failed to load session history for agent: %s", e)
+
         messages = [
             SystemMessage(content=SYSTEM_PROMPT),
+            *history,
             HumanMessage(content=question),
         ]
         tool_calls = []
@@ -157,8 +189,20 @@ class LanggraphService:
             "total_tokens": total_tokens,
         }
 
-        logger.info("Token usage: %s", token_usage)
-        logger.info("Tool calls: %s", tool_calls)
+        logger.info("[INFO] Token usage: %s", token_usage)
+        logger.info("[INFO] Tool calls: %s", tool_calls)
+
+        # Persist conversation turn to MySQL if session_id is provided
+        if session_id:
+            try:
+                db = SessionLocal()
+                try:
+                    save_message(db, session_id, "user", question)
+                    save_message(db, session_id, "assistant", ai_response)
+                finally:
+                    db.close()
+            except Exception as e:
+                logger.warning("[WARN] Failed to save conversation turn to MySQL: %s", e)
 
         return {
             "answer": ai_response,
