@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     # MCP settings
     mcp_url: str = "http://localhost:8001/mcp"
 
+    # Logging settings
+    log_level: str = "INFO"
+
     # CORS settings
     cors_origins: List[str] = ["*"]
 

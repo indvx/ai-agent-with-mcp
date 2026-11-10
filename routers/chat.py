@@ -1,12 +1,12 @@
-import logging
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from core.logger import get_logger
 from service.langgraph_service import LanggraphService
 from schemas.chat import Chat
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = APIRouter(
     prefix="/chat",

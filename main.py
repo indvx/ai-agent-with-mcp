@@ -5,7 +5,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from core.config import settings
+from core.logger import setup_logging, get_logger
 from routers import chat
+
+# Configure application logging
+setup_logging()
+logger = get_logger(__name__)
 
 
 @asynccontextmanager
@@ -13,11 +18,12 @@ async def lifespan(app: FastAPI):
     # Initialize services on application startup
     try:
         await chat.service.initialize()
-    except Exception:
-        # If MCP server is not yet reachable at startup, it will reconnect on first request
-        pass
+        logger.info("[INFO] MCP client initialized successfully.")
+    except Exception as e:
+        logger.warning("[WARN] MCP server unreachable on startup; will retry on first request: %s", e)
     yield
     await chat.service.close()
+    logger.info("[INFO] Application shutdown complete.")
 
 
 app = FastAPI(

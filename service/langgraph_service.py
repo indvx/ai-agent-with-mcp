@@ -1,4 +1,3 @@
-import logging
 from typing import TypedDict, Optional, Any
 from langgraph.graph import StateGraph, START, END
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -7,8 +6,9 @@ from langchain.agents import create_agent
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from service.llm_service import LLMService
 from core.config import settings
+from core.logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 SYSTEM_PROMPT = """You are a strictly read-only database assistant. You cannot modify, delete, or alter any data.
 
