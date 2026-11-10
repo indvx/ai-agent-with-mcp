@@ -1,8 +1,8 @@
-"""Added title into chat session table
+"""Added title field in chat session table
 
-Revision ID: e7748e28e188
-Revises: fb657a6b9d02
-Create Date: 2026-11-10 13:54:37.920866
+Revision ID: 3170344b337c
+Revises: 7063fc118ace
+Create Date: 2026-11-10 16:25:27.013332
 
 """
 from typing import Sequence, Union
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'e7748e28e188'
-down_revision: Union[str, Sequence[str], None] = 'fb657a6b9d02'
+revision: str = '3170344b337c'
+down_revision: Union[str, Sequence[str], None] = '7063fc118ace'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
