@@ -5,8 +5,6 @@ from typing import TypedDict, Optional, Any
 from langgraph.graph import StateGraph, START, END
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_core.globals import set_llm_cache
-from langchain_core.caches import InMemoryCache
 from langchain.agents import create_agent
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from database import SessionLocal
@@ -18,21 +16,35 @@ from core.logger import get_logger
 
 logger = get_logger(__name__)
 
-# Enable in-memory prompt completion caching to reduce duplicate LLM calls
-set_llm_cache(InMemoryCache())
+CASUAL_PATTERNS = [
+    r"^(hi|hello|hey|greetings|howdy)\b",
+    r"^how are you\b",
+    r"^who (are you|am i)\b",
+    r"^what is your name\b",
+    r"^what can you do\b",
+    r"^(thanks|thank you|thx)\b",
+    r"^(bye|goodbye|see you)\b",
+    r"^(good morning|good afternoon|good evening|good night)\b",
+]
 
+DB_PATTERNS = [
+    r"\b(table|tables|schema|database|db|column|columns)\b",
+    r"\b(count|list|search|find|show|records?|rows?)\b",
+    r"\b(employee|employees|user|users|department|departments)\b",
+]
 
-def normalize_query_key(query: str) -> str:
-    """Normalizes query by lowercasing, stripping punctuation, and basic plural stemming."""
-    text = query.lower().strip()
-    text = re.sub(r'[^\w\s]', '', text)
-    words = []
-    for word in text.split():
-        if len(word) > 3 and word.endswith('s') and not word.endswith('ss'):
-            word = word[:-1]
-        words.append(word)
-    return " ".join(words)
+CASUAL_SYSTEM_PROMPT = """You are a helpful and polite database assistant.
+For greetings, pleasantries, questions about who you are or what you can do, answer conversationally, politely, and concisely.
+If the user asks questions unrelated to database capabilities, answer concisely and remind them you can help query and analyze their database."""
 
+INTENT_PROMPT = """You are a query intent classifier. Classify the user query into either "casual" or "database".
+
+- "casual": greetings, pleasantries, small talk, identity questions ("who are you", "who am i"), or general capability questions.
+- "database": queries asking about data, tables, records, schemas, counts, lists, employees, users, departments, or database searches.
+
+Query: "{query}"
+
+Respond with only one word: either "casual" or "database"."""
 
 SYSTEM_PROMPT = """You are a strictly read-only database assistant. You cannot modify, delete, or alter any data.
 
@@ -47,7 +59,9 @@ Guidelines:
 8. Context & Follow-ups: When prior conversation turns exist in history, refer to them directly. Do NOT re-execute tools if the information is already provided in previous turns."""
 
 CHAT_SESSION_PROMPT = """You are a session title generator. Analyze the user's query and generate a short, meaningful title that represents the main topic of the conversation.
-{query}
+
+Query: "{query}"
+
 Rules:
 - Generate a title of 3–6 words.
 - Keep it simple, clear, and relevant.
@@ -64,6 +78,7 @@ class MainState(TypedDict):
     answer: Optional[Any]
     token_usage: Optional[dict]
     tool_calls: Optional[list]
+    intent: Optional[str]
 
 
 class LanggraphService:
@@ -74,49 +89,6 @@ class LanggraphService:
         self.__mcp_client = None
         self.__mcp_url = settings.mcp_url
         self._llm: BaseChatModel = LLMService().get_chat_model()
-        self._cache = OrderedDict()
-        self._cache_ttl = settings.cache_ttl_seconds
-        self._cache_max_size = settings.cache_max_size
-
-    def get_cached_response(self, query: str) -> Optional[dict]:
-        """Returns cached response if available and not expired."""
-        if self._cache_ttl <= 0:
-            return None
-
-        key = normalize_query_key(query)
-        if key not in self._cache:
-            return None
-
-        item = self._cache[key]
-        if time.time() - item["timestamp"] > self._cache_ttl:
-            del self._cache[key]
-            return None
-
-        self._cache.move_to_end(key)
-        return item["data"]
-
-    def cache_response(self, query: str, data: dict):
-        """Stores a completed response in the in-memory cache."""
-        if self._cache_ttl <= 0:
-            return
-
-        key = normalize_query_key(query)
-        cached_data = dict(data)
-        if "token_usage" in cached_data and isinstance(cached_data["token_usage"], dict):
-            cached_data["token_usage"] = {
-                **cached_data["token_usage"],
-                "cached": True,
-            }
-
-        if key in self._cache:
-            self._cache.move_to_end(key)
-        self._cache[key] = {
-            "timestamp": time.time(),
-            "data": cached_data,
-        }
-
-        if len(self._cache) > self._cache_max_size:
-            self._cache.popitem(last=False)
 
     async def initialize(self) -> MultiServerMCPClient:
         """Initializes the MCP client connection if not already created."""
@@ -134,7 +106,7 @@ class LanggraphService:
             )
             return self.__mcp_client
         except Exception as e:
-            logger.error("[ERROR] Failed to initialize MCP client: %s", e)
+            logger.error("Failed to initialize MCP client: %s", e)
             raise
 
     def start(self, state: MainState):
@@ -153,6 +125,93 @@ class LanggraphService:
             logger.warning("Failed to create session for agent: %s", e)
         return {"session_id": session_id}
 
+    def classify_intent(self, state: MainState) -> dict:
+        """Determines if query is casual conversation or requires database tools."""
+        query = (state.get("question") or "").strip().lower()
+
+        # Fast heuristic checks to bypass LLM and save latency/tokens
+        for pattern in CASUAL_PATTERNS:
+            if re.search(pattern, query):
+                logger.info("Matched casual pattern -> classified as 'casual'")
+                return {"intent": "casual"}
+
+        for pattern in DB_PATTERNS:
+            if re.search(pattern, query):
+                logger.info("Matched database pattern -> classified as 'database'")
+                return {"intent": "database"}
+
+        # LLM fallback for ambiguous queries
+        try:
+            prompt = INTENT_PROMPT.format(query=state.get("question") or "")
+            response = self._llm.invoke([HumanMessage(content=prompt)])
+            decision = response.content.strip().lower()
+            intent = "database" if "database" in decision else "casual"
+            logger.info("LLM classified query as '%s'", intent)
+            return {"intent": intent}
+        except Exception as e:
+            logger.warning("Intent classification failed: %s; defaulting to 'database'", e)
+            return {"intent": "database"}
+
+    async def casual_chat(self, state: MainState) -> dict:
+        """Handles casual chit-chat with a bare LLM call, skipping all MCP tools."""
+        question = state.get("question")
+        session_id = state.get("session_id")
+        history = []
+
+        if session_id:
+            try:
+                db = SessionLocal()
+                try:
+                    history = get_recent_messages(db, session_id, limit=6)
+                finally:
+                    db.close()
+            except Exception as e:
+                logger.warning("Failed to load session history for casual chat: %s", e)
+
+        messages = [
+            SystemMessage(content=CASUAL_SYSTEM_PROMPT),
+            *history,
+            HumanMessage(content=question),
+        ]
+
+        logger.info("Executing casual chat (no database tools loaded)")
+        response = await self._llm.ainvoke(messages)
+        ai_response = response.content
+
+        input_tokens = 0
+        output_tokens = 0
+        total_tokens = 0
+        if hasattr(response, "usage_metadata") and response.usage_metadata:
+            input_tokens = response.usage_metadata.get("input_tokens", 0)
+            output_tokens = response.usage_metadata.get("output_tokens", 0)
+            total_tokens = response.usage_metadata.get("total_tokens", 0)
+
+        token_usage = {
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": total_tokens,
+        }
+
+        logger.info("Token usage: %s", token_usage)
+        logger.info("Tool calls: []")
+
+        if session_id:
+            try:
+                db = SessionLocal()
+                try:
+                    save_message(db, session_id, "user", question)
+                    save_message(db, session_id, "assistant", ai_response)
+                finally:
+                    db.close()
+            except Exception as e:
+                logger.warning("Failed to save conversation turn to MySQL: %s", e)
+
+        return {
+            "answer": ai_response,
+            "token_usage": token_usage,
+            "tool_calls": [],
+        }
+
     async def ask_question(self, state: MainState):
         """Invokes the AI agent with database tools to generate a verified answer."""
         question = state.get("question")
@@ -167,7 +226,7 @@ class LanggraphService:
                 finally:
                     db.close()
             except Exception as e:
-                logger.warning("[WARN] Failed to load session history for agent: %s", e)
+                logger.warning("Failed to load session history for agent: %s", e)
 
         messages = [
             SystemMessage(content=SYSTEM_PROMPT),
@@ -182,13 +241,14 @@ class LanggraphService:
         # Discover tools dynamically from the MCP server and bind them to the LLM
         tools = await self.__mcp_client.get_tools()
         agent = create_agent(self._llm, tools)
+        logger.info("Executing database agent with %d MCP tools", len(tools))
         result = await agent.ainvoke({"messages": messages})
         ai_response = result["messages"][-1].content
         input_tokens = 0
         output_tokens = 0
         total_tokens = 0
 
-        # Sum token usage across all internal tool-calling turns
+        # Sum token usage across internal turns and log each tool call
         if isinstance(result, dict) and "messages" in result:
             for message in result["messages"]:
                 if hasattr(message, "tool_calls") and message.tool_calls:
@@ -218,39 +278,55 @@ class LanggraphService:
                 finally:
                     db.close()
             except Exception as e:
-                logger.warning("[WARN] Failed to save conversation turn to MySQL: %s", e)
+                logger.warning("Failed to save conversation turn to MySQL: %s", e)
 
         return {
             "answer": ai_response,
             "token_usage": token_usage,
             "tool_calls": tool_calls,
         }
-    def conditional_node(self, state: MainState) -> str:
-        """Determines workflow branch."""
+
+    def session_router(self, state: MainState) -> str:
+        """Determines workflow branch based on session presence."""
         if state.get("session_id") and state["session_id"] != "":
-            logger.info("Session ID is present: %s, proceeding to chat node.", state.get("session_id"))  
-            return "chat"
-        logger.info("Session ID is not present, proceeding to start node.")
+            return "classify_intent"
         return "start"
 
+    def intent_router(self, state: MainState) -> str:
+        """Routes between casual conversation and database agent."""
+        if state.get("intent") == "casual":
+            return "casual_chat"
+        return "chat"
+
     def build_pipeline(self):
-        """Compiles the single-node LangGraph execution graph for chat requests."""
+        """Compiles the multi-node LangGraph execution graph for chat requests."""
         if self.__graph is not None:
             return self.__graph
 
         pipeline = StateGraph(MainState)
+        pipeline.add_node("start", self.start)
+        pipeline.add_node("classify_intent", self.classify_intent)
+        pipeline.add_node("casual_chat", self.casual_chat)
+        pipeline.add_node("chat", self.ask_question)
+
         pipeline.add_conditional_edges(
             START,
-            self.conditional_node,
+            self.session_router,
             {
                 "start": "start",
+                "classify_intent": "classify_intent",
+            },
+        )
+        pipeline.add_edge("start", "classify_intent")
+        pipeline.add_conditional_edges(
+            "classify_intent",
+            self.intent_router,
+            {
+                "casual_chat": "casual_chat",
                 "chat": "chat",
             },
         )
-        pipeline.add_node("chat", self.ask_question)
-        pipeline.add_node("start", self.start)
-
-        pipeline.add_edge("start", "chat")
+        pipeline.add_edge("casual_chat", END)
         pipeline.add_edge("chat", END)
 
         self.__graph = pipeline.compile()
