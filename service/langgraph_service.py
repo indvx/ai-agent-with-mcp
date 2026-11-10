@@ -10,7 +10,8 @@ from langchain_core.caches import InMemoryCache
 from langchain.agents import create_agent
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from database import SessionLocal
-from sql.crud.chat import get_recent_messages, save_message
+from sql.crud.chat import get_recent_messages, save_message, get_or_create_session
+from sql.models.chat_session import ChatSession
 from service.llm_service import LLMService
 from core.config import settings
 from core.logger import get_logger
@@ -45,6 +46,16 @@ Guidelines:
 7. Casual Chat & Output: Reply directly to greetings without tools. Present results in concise Markdown.
 8. Context & Follow-ups: When prior conversation turns exist in history, refer to them directly. Do NOT re-execute tools if the information is already provided in previous turns."""
 
+CHAT_SESSION_PROMPT = """You are a session title generator. Analyze the user's query and generate a short, meaningful title that represents the main topic of the conversation.
+{query}
+Rules:
+- Generate a title of 3–6 words.
+- Keep it simple, clear, and relevant.
+- Do not copy the entire user query.
+- Generate the title only once per session.
+- Do not generate titles for subsequent messages.
+- Return only the title without any explanation.
+"""
 
 # Defines the data passed between LangGraph nodes during a chat request
 class MainState(TypedDict):
@@ -58,12 +69,11 @@ class MainState(TypedDict):
 class LanggraphService:
     """Manages the LangGraph agent workflow and connects it to the MCP tool server."""
 
-    def __init__(self, llm_service: Optional[LLMService] = None):
+    def __init__(self):
         self.__graph = None
         self.__mcp_client = None
         self.__mcp_url = settings.mcp_url
-        self._llm_service = llm_service or LLMService()
-        self._llm: Optional[BaseChatModel] = None
+        self._llm: BaseChatModel = LLMService().get_chat_model()
         self._cache = OrderedDict()
         self._cache_ttl = settings.cache_ttl_seconds
         self._cache_max_size = settings.cache_max_size
@@ -108,12 +118,6 @@ class LanggraphService:
         if len(self._cache) > self._cache_max_size:
             self._cache.popitem(last=False)
 
-    @property
-    def llm(self) -> BaseChatModel:
-        if self._llm is None:
-            self._llm = self._llm_service.get_chat_model()
-        return self._llm
-
     async def initialize(self) -> MultiServerMCPClient:
         """Initializes the MCP client connection if not already created."""
         if self.__mcp_client is not None:
@@ -133,9 +137,21 @@ class LanggraphService:
             logger.error("[ERROR] Failed to initialize MCP client: %s", e)
             raise
 
-    async def close(self):
-        """Clean up resources on service shutdown."""
-        self.__mcp_client = None
+    def start(self, state: MainState):
+        """Initializes session and passes updated state to chat node."""
+        question = state.get("question")
+        session_id = state.get("session_id")
+
+        response = self._llm.invoke([HumanMessage(content=CHAT_SESSION_PROMPT.format(query=question))])
+        try:
+            db = SessionLocal()
+            try:
+                session_id = get_or_create_session(db, session_id, response.content.strip())
+            finally:
+                db.close()
+        except Exception as e:
+            logger.warning("Failed to create session for agent: %s", e)
+        return {"session_id": session_id}
 
     async def ask_question(self, state: MainState):
         """Invokes the AI agent with database tools to generate a verified answer."""
@@ -165,7 +181,7 @@ class LanggraphService:
 
         # Discover tools dynamically from the MCP server and bind them to the LLM
         tools = await self.__mcp_client.get_tools()
-        agent = create_agent(self.llm, tools)
+        agent = create_agent(self._llm, tools)
         result = await agent.ainvoke({"messages": messages})
         ai_response = result["messages"][-1].content
         input_tokens = 0
@@ -189,8 +205,8 @@ class LanggraphService:
             "total_tokens": total_tokens,
         }
 
-        logger.info("[INFO] Token usage: %s", token_usage)
-        logger.info("[INFO] Tool calls: %s", tool_calls)
+        logger.info("Token usage: %s", token_usage)
+        logger.info("Tool calls: %s", tool_calls)
 
         # Persist conversation turn to MySQL if session_id is provided
         if session_id:
@@ -209,6 +225,13 @@ class LanggraphService:
             "token_usage": token_usage,
             "tool_calls": tool_calls,
         }
+    def conditional_node(self, state: MainState) -> str:
+        """Determines workflow branch."""
+        if state.get("session_id") and state["session_id"] != "":
+            logger.info("Session ID is present: %s, proceeding to chat node.", state.get("session_id"))  
+            return "chat"
+        logger.info("Session ID is not present, proceeding to start node.")
+        return "start"
 
     def build_pipeline(self):
         """Compiles the single-node LangGraph execution graph for chat requests."""
@@ -216,8 +239,18 @@ class LanggraphService:
             return self.__graph
 
         pipeline = StateGraph(MainState)
+        pipeline.add_conditional_edges(
+            START,
+            self.conditional_node,
+            {
+                "start": "start",
+                "chat": "chat",
+            },
+        )
         pipeline.add_node("chat", self.ask_question)
-        pipeline.add_edge(START, "chat")
+        pipeline.add_node("start", self.start)
+
+        pipeline.add_edge("start", "chat")
         pipeline.add_edge("chat", END)
 
         self.__graph = pipeline.compile()

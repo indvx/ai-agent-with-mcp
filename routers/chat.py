@@ -9,6 +9,7 @@ from database import SessionLocal
 from sql.crud.chat import (
     get_or_create_session,
     get_recent_messages,
+    get_all_sessions,
     save_message,
     clear_session_history,
 )
@@ -122,17 +123,8 @@ async def chat(query: Chat, request: Request):
 @limiter.limit("5/minute")
 async def chat_stream(query: Chat, request: Request):
     """Stream the agent response as server-sent events."""
-    db = SessionLocal()
-    try:
-        sid = get_or_create_session(db, query.session_id)
-    except Exception as e:
-        logger.warning("[WARN] Failed to resolve session in MySQL: %s", e)
-        sid = str(uuid.uuid4())
-    finally:
-        db.close()
-
     return StreamingResponse(
-        generate_stream_data(query.query, sid),
+        generate_stream_data(query.query, query.session_id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -142,17 +134,35 @@ async def chat_stream(query: Chat, request: Request):
     )
 
 
+@router.get("/sessions")
+async def list_sessions():
+    """Returns a list of recent sessions for the UI sidebar."""
+    try:
+        db = SessionLocal()
+        try:
+            sessions = get_all_sessions(db, limit=50)
+            return {"sessions": sessions}
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error("[ERROR] Failed to list sessions: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to list sessions")
+
+
 @router.get("/sessions/{session_id}/history")
 async def get_session_history(session_id: str):
     """Retrieves recent conversation message history for a given session."""
     try:
         db = SessionLocal()
         try:
-            messages = get_recent_messages(db, session_id, limit=20)
+            messages = get_recent_messages(db, session_id, limit=50)
             return {
                 "session_id": session_id,
                 "messages": [
-                    {"role": m.type, "content": m.content}
+                    {
+                        "role": "user" if m.type == "human" else "assistant",
+                        "content": m.content,
+                    }
                     for m in messages
                 ],
             }
